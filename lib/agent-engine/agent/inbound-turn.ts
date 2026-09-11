@@ -1,5 +1,9 @@
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
+import {
+  sinalDeConversaSobreGrade,
+  sinalDePedidoComercialDaAcademia,
+} from '@/lib/academia/consulta-grade';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
@@ -109,6 +113,7 @@ import {
   promessasEmAberto,
   type DeclaracaoDoTurno,
 } from './declaracao';
+import { ACADEMIA_GRADE_SYSTEM_BLOCK } from './academia-grade-prompt';
 import {
   projetarContexto,
   projetarRetornoDeTool,
@@ -807,6 +812,8 @@ const AGENDA_TOOL_NAMES = new Set([
   'crm_book_appointment',
   'crm_reschedule_appointment',
 ]);
+
+const ACADEMIA_GRADE_TOOL_NAMES = new Set(['crm_find_academia_classes']);
 
 export interface InboundTurnKnobs {
   /** últimas N mensagens no contexto de abertura (LEAD_CONTEXT_HISTORY_LIMIT) */
@@ -1873,6 +1880,9 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
   }
+  if (agentConfig !== null && agentConfig.toolIds.includes('crm_find_academia_classes')) {
+    blocosResidentes.push(ACADEMIA_GRADE_SYSTEM_BLOCK);
+  }
   if (preview)
     blocosResidentes.push(
       'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',
@@ -2234,6 +2244,7 @@ async function executarTurnoDoAgente(
   // as tools do modelo rodam em passos anteriores do mesmo loop, o valor já está certo
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
+  let academiaGradeToolCalledThisTurn = false;
   const outcomes: ChannelSendResult[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -2252,6 +2263,13 @@ async function executarTurnoDoAgente(
   // para decidir se a tool entra no turno (mesmo padrão de gate de search_knowledge/
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
   const skillSignal = latestInboundSignal(effectiveContext.messages);
+  const academiaGradeRequestActive =
+    agentConfig !== null &&
+    agentConfig.toolIds.includes('crm_find_academia_classes') &&
+    sinalDeConversaSobreGrade(effectiveContext.messages);
+  const academiaGradeCommercialFollowupAllowed = sinalDePedidoComercialDaAcademia(
+    currentInboundText ?? skillSignal,
+  );
   const skillMatch = matchSkills(skills, skillSignal);
   const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
@@ -2619,6 +2637,11 @@ async function executarTurnoDoAgente(
             agenda: {
               active: agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment'),
               toolCalledThisTurn: agendaToolCalledThisTurn,
+            },
+            academiaGrade: {
+              active: academiaGradeRequestActive,
+              toolCalledThisTurn: academiaGradeToolCalledThisTurn,
+              commercialFollowupAllowed: academiaGradeCommercialFollowupAllowed,
             },
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
@@ -3289,14 +3312,17 @@ async function executarTurnoDoAgente(
           mcpCleanup = mcp.cleanup;
           for (const [name, mcpTool] of Object.entries(mcp.tools)) {
             if (name in rawTools) continue;
-            // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
-            // precisa saber para não vetar um turno que já checou a agenda de verdade.
-            if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
+            // Marca a EXECUÇÃO (não só a decisão de chamar): os gates devem distinguir uma
+            // capacidade publicada de uma consulta que realmente ocorreu neste turno.
+            const marcaAgenda = AGENDA_TOOL_NAMES.has(name);
+            const marcaGradeAcademia = ACADEMIA_GRADE_TOOL_NAMES.has(name);
+            if ((marcaAgenda || marcaGradeAcademia) && typeof mcpTool.execute === 'function') {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
               rawTools[name] = {
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
-                  agendaToolCalledThisTurn = true;
+                  if (marcaAgenda) agendaToolCalledThisTurn = true;
+                  if (marcaGradeAcademia) academiaGradeToolCalledThisTurn = true;
                   return executeOriginal(...args);
                 }) as typeof mcpTool.execute,
               };
@@ -3373,7 +3399,18 @@ async function executarTurnoDoAgente(
             },
             () => pendingCitations,
             semanticClassifier,
-            () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
+            () => ({
+              agenda: {
+                active: previewContext.agenda?.active ?? false,
+                toolCalledThisTurn: agendaToolCalledThisTurn,
+              },
+              academiaGrade: {
+                active: previewContext.academiaGrade?.active ?? false,
+                toolCalledThisTurn: academiaGradeToolCalledThisTurn,
+                commercialFollowupAllowed:
+                  previewContext.academiaGrade?.commercialFollowupAllowed ?? false,
+              },
+            }),
           )
         : rawTools;
     const tools = wrapToolsWithBreaker(previewTools, {
@@ -3389,41 +3426,70 @@ async function executarTurnoDoAgente(
     const currentStage: LeadStage = leadState?.stage ?? 'new';
     let stageSuggestion: LeadStage | null = null;
     let stageHintBlock = '';
-    if (deps.knobs.stageClassifier !== undefined) {
-      stageSuggestion = await classifyStage(
-        pool,
-        deps.llmCfg,
-        { tenantId, leadId: leadId || null, jobId: job?.id },
-        {
-          context: effectiveContext,
-          currentStage,
-          ...argsAux(deps.knobs.stageClassifier.model),
-        },
-        { registry: deps.registry, log: runLog },
-      );
-      if (stageSuggestion !== null) {
-        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
-      }
-    }
 
     // F4-04: classifier ADVISÓRIO anti-jailbreak sobre a mensagem INBOUND do lead (o
     // skillSignal já é a última inbound). Roda pelo seam agnóstico (modelo BARATO, budget
     // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
     // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
     let jailbreakLevel: JailbreakLevel = 'none';
-    if (camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
-      const verdict = await classifyJailbreak(
-        pool,
-        deps.llmCfg,
-        { tenantId, leadId: leadId || null, jobId: job?.id },
-        {
-          message: skillSignal,
-          // Knob ausente + organização ligando = roda com o modelo padrão dela,
-          // que é a convenção já usada pelo stageClassifier.
-          ...argsAux(deps.knobs.jailbreak?.model),
-        },
-        { registry: deps.registry, log: runLog },
-      );
+
+    // ═══ OS DOIS AUXILIARES ROLAM JUNTOS ═══
+    //
+    // Eram sequenciais, e a espera somava no relógio do cliente: medido no
+    // piloto, 3,3s de `stage_classifier` MAIS 3,9s de `jailbreak_detect` antes
+    // de o turno começar a ser gerado — 7,2s em que ninguém do outro lado vê
+    // nada acontecer.
+    //
+    // Nada os obriga a essa ordem: cada um lê contexto JÁ pronto (o estágio
+    // atual e a última inbound), nenhum lê a saída do outro, e os dois só são
+    // consumidos depois — a sugestão de estágio vira hint no sufixo do prompt,
+    // e o nível de jailbreak só é correlacionado no fim do turno. Em paralelo,
+    // o custo passa a ser o do mais lento em vez da soma.
+    //
+    // `Promise.all` e não `allSettled` de propósito: a escolta que envolve o
+    // turno inteiro é quem trata erro de auxiliar (ver o bloco grande acima
+    // sobre teto de orçamento), e engolir aqui devolveria o silêncio que
+    // aquela escolta foi criada para acabar.
+    const rodaStage = deps.knobs.stageClassifier !== undefined;
+    const rodaJailbreak = camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined);
+    const [sugestao, verdict] = await Promise.all([
+      rodaStage
+        ? classifyStage(
+            pool,
+            deps.llmCfg,
+            { tenantId, leadId: leadId || null, jobId: job?.id },
+            {
+              context: effectiveContext,
+              currentStage,
+              ...argsAux(deps.knobs.stageClassifier!.model),
+            },
+            { registry: deps.registry, log: runLog },
+          )
+        : Promise.resolve(null),
+      rodaJailbreak
+        ? classifyJailbreak(
+            pool,
+            deps.llmCfg,
+            { tenantId, leadId: leadId || null, jobId: job?.id },
+            {
+              message: skillSignal,
+              // Knob ausente + organização ligando = roda com o modelo padrão dela,
+              // que é a convenção já usada pelo stageClassifier.
+              ...argsAux(deps.knobs.jailbreak?.model),
+            },
+            { registry: deps.registry, log: runLog },
+          )
+        : Promise.resolve(null),
+    ]);
+
+    if (rodaStage) {
+      stageSuggestion = sugestao;
+      if (stageSuggestion !== null) {
+        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+      }
+    }
+
+    if (verdict !== null) {
       jailbreakLevel = verdict.level;
       if (verdict.flag) {
         // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
