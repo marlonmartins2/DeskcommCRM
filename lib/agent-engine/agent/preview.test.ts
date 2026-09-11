@@ -175,6 +175,44 @@ it('consulta a grade real no cenário e só libera o horário depois da execuç�
   expect(p.result.candidates).toHaveLength(1);
 });
 
+it('consulta informações reais no cenário e só libera funcionamento depois da execução', async () => {
+  const p = preview();
+  let called = false;
+  const ctx = {
+    ...gate(),
+    academiaInformation: { active: true, toolCalledThisTurn: false },
+  };
+  const tools = applyPreviewPolicy(
+    {
+      crm_get_academia_info: definition(() => {
+        called = true;
+        return { source: 'cadastro_operacional', opening_hours: { opens_at: '05:00' } };
+      }),
+      send_message: definition(vi.fn()),
+    },
+    p,
+    ctx,
+    () => [],
+    undefined,
+    () => ({
+      academiaInformation: { active: true, toolCalledThisTurn: called },
+    }),
+  );
+
+  await execute(tools, 'send_message', { body: 'Na segunda, abrimos às 05:00.' });
+  expect(
+    p.result.impediments.some((item) =>
+      item.code === 'academia_information_stall_sem_ferramenta'),
+  ).toBe(true);
+
+  await execute(tools, 'crm_get_academia_info', { subject: 'opening_hours', weekday: 1 });
+  expect(called).toBe(true);
+  await execute(tools, 'send_message', {
+    body: 'Na segunda, o horário regular começa às 05:00.',
+  });
+  expect(p.result.candidates).toHaveLength(1);
+});
+
 it('uses only supplied in-memory sample contact in sandbox', () => {
   const context = scenarioContext([], { name: 'Maria Cenário', phone: '+5511999999999' });
   expect(context.context.contact.name).toBe('Maria Cenário');

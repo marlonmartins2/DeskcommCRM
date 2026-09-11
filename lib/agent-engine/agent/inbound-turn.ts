@@ -4,6 +4,7 @@ import {
   sinalDeConversaSobreGrade,
   sinalDePedidoComercialDaAcademia,
 } from '@/lib/academia/consulta-grade';
+import { sinalDeConversaSobreInformacoesAcademia } from '@/lib/academia/consulta-informacoes';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
@@ -114,6 +115,7 @@ import {
   type DeclaracaoDoTurno,
 } from './declaracao';
 import { ACADEMIA_GRADE_SYSTEM_BLOCK } from './academia-grade-prompt';
+import { ACADEMIA_INFORMATION_SYSTEM_BLOCK } from './academia-information-prompt';
 import {
   projetarContexto,
   projetarRetornoDeTool,
@@ -814,6 +816,7 @@ const AGENDA_TOOL_NAMES = new Set([
 ]);
 
 const ACADEMIA_GRADE_TOOL_NAMES = new Set(['crm_find_academia_classes']);
+const ACADEMIA_INFORMATION_TOOL_NAMES = new Set(['crm_get_academia_info']);
 
 export interface InboundTurnKnobs {
   /** últimas N mensagens no contexto de abertura (LEAD_CONTEXT_HISTORY_LIMIT) */
@@ -1883,6 +1886,9 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_find_academia_classes')) {
     blocosResidentes.push(ACADEMIA_GRADE_SYSTEM_BLOCK);
   }
+  if (agentConfig !== null && agentConfig.toolIds.includes('crm_get_academia_info')) {
+    blocosResidentes.push(ACADEMIA_INFORMATION_SYSTEM_BLOCK);
+  }
   if (preview)
     blocosResidentes.push(
       'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',
@@ -2245,6 +2251,7 @@ async function executarTurnoDoAgente(
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
   let academiaGradeToolCalledThisTurn = false;
+  let academiaInformationToolCalledThisTurn = false;
   const outcomes: ChannelSendResult[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -2267,6 +2274,10 @@ async function executarTurnoDoAgente(
     agentConfig !== null &&
     agentConfig.toolIds.includes('crm_find_academia_classes') &&
     sinalDeConversaSobreGrade(effectiveContext.messages);
+  const academiaInformationRequestActive =
+    agentConfig !== null &&
+    agentConfig.toolIds.includes('crm_get_academia_info') &&
+    sinalDeConversaSobreInformacoesAcademia(effectiveContext.messages);
   const academiaGradeCommercialFollowupAllowed = sinalDePedidoComercialDaAcademia(
     currentInboundText ?? skillSignal,
   );
@@ -2642,6 +2653,10 @@ async function executarTurnoDoAgente(
               active: academiaGradeRequestActive,
               toolCalledThisTurn: academiaGradeToolCalledThisTurn,
               commercialFollowupAllowed: academiaGradeCommercialFollowupAllowed,
+            },
+            academiaInformation: {
+              active: academiaInformationRequestActive,
+              toolCalledThisTurn: academiaInformationToolCalledThisTurn,
             },
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
@@ -3316,13 +3331,18 @@ async function executarTurnoDoAgente(
             // capacidade publicada de uma consulta que realmente ocorreu neste turno.
             const marcaAgenda = AGENDA_TOOL_NAMES.has(name);
             const marcaGradeAcademia = ACADEMIA_GRADE_TOOL_NAMES.has(name);
-            if ((marcaAgenda || marcaGradeAcademia) && typeof mcpTool.execute === 'function') {
+            const marcaInformacaoAcademia = ACADEMIA_INFORMATION_TOOL_NAMES.has(name);
+            if (
+              (marcaAgenda || marcaGradeAcademia || marcaInformacaoAcademia) &&
+              typeof mcpTool.execute === 'function'
+            ) {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
               rawTools[name] = {
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
                   if (marcaAgenda) agendaToolCalledThisTurn = true;
                   if (marcaGradeAcademia) academiaGradeToolCalledThisTurn = true;
+                  if (marcaInformacaoAcademia) academiaInformationToolCalledThisTurn = true;
                   return executeOriginal(...args);
                 }) as typeof mcpTool.execute,
               };
@@ -3409,6 +3429,10 @@ async function executarTurnoDoAgente(
                 toolCalledThisTurn: academiaGradeToolCalledThisTurn,
                 commercialFollowupAllowed:
                   previewContext.academiaGrade?.commercialFollowupAllowed ?? false,
+              },
+              academiaInformation: {
+                active: previewContext.academiaInformation?.active ?? false,
+                toolCalledThisTurn: academiaInformationToolCalledThisTurn,
               },
             }),
           )

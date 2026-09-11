@@ -25,6 +25,7 @@ import {
   sinalDeConversaSobreGrade,
   sinalDePedidoComercialDaAcademia,
 } from '@/lib/academia/consulta-grade';
+import { sinalDeConversaSobreInformacoesAcademia } from '@/lib/academia/consulta-informacoes';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -131,6 +132,12 @@ export async function previewGateContext(
         p.context.context.messages.filter((message) => message.direction === 'inbound').at(-1)?.body ?? '',
       ),
     },
+    academiaInformation: {
+      active:
+        p.agent.toolIds.includes('crm_get_academia_info') &&
+        sinalDeConversaSobreInformacoesAcademia(p.context.context.messages),
+      toolCalledThisTurn: false,
+    },
     internalVocabularyEnforced: true,
   };
 }
@@ -140,6 +147,7 @@ const SCENARIO_READS = new Set([
   'crm_list_appointment_types',
   'crm_find_free_slots',
   'crm_find_academia_classes',
+  'crm_get_academia_info',
 ]);
 /** Unknown tools fail closed. A write proposal never calls its original execute. */
 export function applyPreviewPolicy(

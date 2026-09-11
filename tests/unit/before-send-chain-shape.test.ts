@@ -35,6 +35,7 @@ const ORDEM_ESPERADA = [
   "internal_vocabulary",
   "agenda_stall",
   "academia_grade_stall",
+  "academia_information_stall",
   "disclosure",
 ] as const;
 
@@ -66,8 +67,8 @@ describe("forma da cadeia before_send", () => {
     // O par (tamanho, versão) é o que amarra os dois. Acrescentar um gate sem
     // bumpar deixa o trace de auditoria mentindo sobre qual cadeia rodou — e o
     // trace é justamente a prova que as Fases 0–2 usam para dizer "não regrediu".
-    expect(BEFORE_SEND_GATES).toHaveLength(12);
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(8);
+    expect(BEFORE_SEND_GATES).toHaveLength(13);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(9);
   });
 
   it("internal_vocabulary roda ANTES do disclosure — inspeciona o texto do modelo, não o emendado", () => {
@@ -89,6 +90,16 @@ describe("forma da cadeia before_send", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("academia_grade_stall")).toBe(nomes.indexOf("agenda_stall") + 1);
     expect(nomes.indexOf("academia_grade_stall")).toBeLessThan(nomes.indexOf("disclosure"));
+  });
+
+  it("academia_information_stall roda depois da grade e antes do disclosure", () => {
+    const nomes = BEFORE_SEND_GATES.map((g) => g.name);
+    expect(nomes.indexOf("academia_information_stall")).toBe(
+      nomes.indexOf("academia_grade_stall") + 1,
+    );
+    expect(nomes.indexOf("academia_information_stall")).toBeLessThan(
+      nomes.indexOf("disclosure"),
+    );
   });
 
   it("nenhum gate repetido — nome duplicado quebraria a leitura do trace", () => {
