@@ -51,15 +51,14 @@ pelo outro.
 
 ### 2.3 Funcionamento semanal
 
-Cada dia da semana aceita zero, um ou vários períodos:
+Cada dia da semana aceita zero ou um período contínuo:
 
 - zero períodos significa dia fechado;
-- um período representa funcionamento contínuo, como `05:00–23:00`;
-- vários períodos representam intervalos, como `05:00–12:00` e `14:00–23:00`.
+- um período representa abertura e fechamento, como `05:00–23:00`.
 
-Um período deve começar antes de terminar. Períodos do mesmo dia não podem se
-sobrepor. Nesta etapa, um período não atravessa a meia-noite; quando necessário,
-o funcionamento é dividido entre os dois dias envolvidos.
+O horário de abertura deve ser anterior ao fechamento. Nesta etapa, o período
+não atravessa a meia-noite. A unidade informada não costuma fechar durante o dia,
+portanto intervalos internos não fazem parte do contrato desta entrega.
 
 Os horários representam a semana regular no fuso da organização. Feriados,
 recessos, fechamentos extraordinários e outras exceções de calendário pertencem
@@ -122,7 +121,7 @@ borda, o banco impede:
 
 - dia fora de 1–7;
 - abertura igual ou posterior ao fechamento;
-- períodos sobrepostos para a mesma organização e dia;
+- mais de um período para a mesma organização e dia;
 - mais de um perfil para a mesma organização.
 
 A atualização do perfil e da semana regular ocorre atomicamente, com controle
@@ -181,13 +180,13 @@ Cadastros.
 A aba contém três blocos:
 
 1. **Dados gerais** — endereço, telefone, WhatsApp, e-mail e fuso horário.
-2. **Funcionamento semanal** — sete dias, controle de fechado e ação para
-   adicionar/remover períodos.
+2. **Funcionamento semanal** — sete dias, controle de fechado e um par de
+   horários de abertura/fechamento para cada dia aberto.
 3. **Regras e orientações** — campo de texto livre.
 
-Ao marcar um dia como fechado, a tela remove seus períodos somente no estado
+Ao marcar um dia como fechado, a tela remove seu período somente no estado
 local; a gravação ocorre ao salvar o formulário completo. A tela valida formato,
-ordem e sobreposição antes do envio, sem depender disso como única proteção.
+ordem e completude antes do envio, sem depender disso como única proteção.
 
 Alterações ainda não persistidas ficam visíveis. Sucesso, erro de validação e
 conflito de revisão têm mensagens próprias. Perfis sem permissão veem os dados,
@@ -274,13 +273,13 @@ nova da fonte.
 - instalação e atualização do baseline;
 - RLS e isolamento entre duas organizações;
 - perfil único por organização;
-- rejeição de período inválido e sobreposto;
+- rejeição de período inválido e de mais de um período no mesmo dia;
 - atualização atômica e conflito de revisão.
 
 ### Unidade e API
 
 - validação e projeção da semana completa;
-- dias fechados e múltiplos períodos;
+- dias fechados e um período contínuo por dia aberto;
 - leitura e mutação por papel;
 - módulo desabilitado;
 - ausência de campos e falha técnica;
@@ -299,9 +298,9 @@ nova da fonte.
 
 - abrir a aba Informações;
 - salvar dados gerais e regras;
-- cadastrar múltiplos períodos;
+- cadastrar abertura e fechamento em um dia;
 - marcar um dia como fechado;
-- validar erro de sobreposição;
+- validar abertura posterior ao fechamento;
 - confirmar leitura sem edição para papel não autorizado;
 - testar a conversa "que horas abre segunda?";
 - confirmar que "tem CrossFit segunda de manhã?" ainda usa a grade.
