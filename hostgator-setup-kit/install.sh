@@ -1568,8 +1568,10 @@ esac
   printf '# Marca da instalação (white-label). Preencha APP_LOGO_URL com a URL de uma\n'
   printf '# imagem pública para trocar o texto por logo na sidebar. Ver lib/branding.ts.\n'
   printf '# APP_ACCENT_HEX é a SEMENTE da cor: o banco (platform_branding) manda depois\n'
-  printf '# da primeira leitura, mas é daqui que sai a cor dos e-mails de acesso, que o\n'
-  printf '# marca-emails.sh empurra para o GoTrue e o banco não alcança.\n'
+  printf '# da primeira leitura. Nos e-mails de acesso depende da topologia: na NUVEM do\n'
+  printf '# Supabase quem empurra é o marca-emails.sh, lendo daqui, e o banco não alcança;\n'
+  printf '# num Supabase PRÓPRIO o GoTrue busca /email-templates/ do app, que resolve a\n'
+  printf '# marca pelo banco — e aí trocar em Configurações > Marca chega ao e-mail.\n'
   # Normaliza a escolha do idioma ANTES de gravar: o campo aceita "1"/"2"
   # porque é o que se digita lendo um menu numerado, mas quem lê o `.env` — o
   # bootstrap, o SQL abaixo, um operador conferindo — precisa do código.
@@ -1831,6 +1833,17 @@ fi
 # da máquina de quem desenvolve. (issue #431/#426)
 pendencia_dos_emails() {
   [ -s "${PENDENCIA_EMAIL:-/dev/null}" ] || return 0
+
+  # A receita DEPENDE DA TOPOLOGIA, e mandar a errada é pior que não mandar
+  # nada. Num Supabase PRÓPRIO não existe supabase.com/dashboard nem
+  # Management API: quem configura é env do GoTrue. Este bloco já mandou o
+  # self-hoster para um painel que ele não tem — e a pessoa fica achando que
+  # perdeu a senha do Supabase quando o que falta é uma variável.
+  case "${NEXT_PUBLIC_SUPABASE_URL:-}" in
+    https://*.supabase.co*) : ;;
+    *) pendencia_dos_emails_proprio; return 0 ;;
+  esac
+
   cat <<PEND
 
 $(c_ylw "  ─── FALTA UM PASSO, e ele é no painel do Supabase ─────")
@@ -1854,6 +1867,46 @@ $(sed 's/^/    /' "$PENDENCIA_EMAIL")
   Para o instalador fazer isso sozinho da próxima vez, rode
   \`bash hostgator-setup-kit/install.sh\` de novo e informe o token de
   acesso quando ele perguntar (supabase.com/dashboard/account/tokens).
+PEND
+}
+
+# ── A mesma pendência, na topologia em que o Supabase é seu ─────────────────
+# POR QUE O INSTALADOR NÃO ESCREVE ISTO SOZINHO: o GoTrue não é serviço deste
+# compose. O kit sobe app, worker, scheduler, waha, redis, srh e caddy; o
+# Supabase próprio é outra stack, com outro arquivo, que pode nem estar nesta
+# máquina. Escrever nele seria o instalador editar a instalação de terceiro.
+# Então ele faz o que pode fazer com honestidade: diz as duas linhas exatas, e
+# o healthcheck.sh confere depois se elas chegaram.
+pendencia_dos_emails_proprio() {
+  cat <<PEND
+
+$(c_ylw "  ─── FALTA UM PASSO, no SEU Supabase ───────────────────")
+
+  Os e-mails de acesso (confirmar cadastro e redefinir senha) ainda saem no
+  modelo padrão do GoTrue. O link desse modelo NÃO fecha a sessão quando o
+  clique vem do webmail — a conta é confirmada e a pessoa entra sem
+  organização e sem menu.
+
+  O que o passo automático encontrou:
+
+$(sed 's/^/    /' "$PENDENCIA_EMAIL")
+
+  Como o seu Supabase é próprio, não há painel na nuvem nem API para isto:
+  a configuração é por variável de ambiente do serviço \`auth\` (GoTrue).
+  Acrescente ao compose DELE — não a este:
+
+       GOTRUE_SITE_URL=https://${DOMAIN}
+       GOTRUE_URI_ALLOW_LIST=https://${DOMAIN}/auth/confirm
+       GOTRUE_MAILER_TEMPLATES_CONFIRMATION=https://${DOMAIN}/email-templates/confirmation
+       GOTRUE_MAILER_TEMPLATES_RECOVERY=https://${DOMAIN}/email-templates/recovery
+
+  $(c_ylw "Tem de ser URL http(s).") O GoTrue cola no fim do SITE_URL tudo o que não
+  começa com \`http\` e busca por HTTP — um caminho de arquivo faz o cliente
+  receber a tela de login dentro do e-mail.
+
+  Depois reinicie só o auth do seu Supabase e confira aqui com:
+
+       bash hostgator-setup-kit/healthcheck.sh
 PEND
 }
 

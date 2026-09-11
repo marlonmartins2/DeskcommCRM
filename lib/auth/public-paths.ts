@@ -51,6 +51,16 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/manifest\.webmanifest$/,
   /^\/team\/accept-invite\/.+$/,
   /^\/account-suspended$/,
+  // OS MOLDES DE E-MAIL DO GoTrue. Quem busca é o GoTrue, um processo de
+  // terceiro que não tem — nem pode ter — sessão nossa. O conteúdo é HTML com
+  // placeholders Go (`{{ .TokenHash }}`) mais nome, cor e logo da instalação,
+  // que já aparecem na tela de login sem sessão. Sem esta linha o `proxy`
+  // devolve 307 para `/login` e o GoTrue manda a TELA DE LOGIN dentro do
+  // e-mail — o modo de falha exato que esta rota existe para acabar.
+  //
+  // Âncorado nos dois nomes: `/^\/email-templates\//` deixaria qualquer
+  // sub-path futuro nascer público de carona.
+  /^\/email-templates\/(confirmation|recovery)$/,
   // Documentos legais. O checkbox obrigatório de `/onboarding/welcome` linka os
   // dois, e o aceite acontece antes de a pessoa ter qualquer coisa no sistema —
   // exigir sessão para LER o que se está aceitando inverte a ordem. Âncorado nos
