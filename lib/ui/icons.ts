@@ -104,6 +104,7 @@ export {
   // followup flow builder (Task 6.2)
   GitBranch,
   Flag,
+  TreeStructure,
   // misc
   DotsThree,
   CaretDown,
