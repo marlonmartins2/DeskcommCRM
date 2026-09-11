@@ -36,13 +36,17 @@ export const PACOTE_PADRAO_DO_ONBOARDING = "vender" as const;
  * a tela mostraria a capacidade ligada e o turno não teria a mão.
  */
 const MODULOS_DESLIGADOS: ModulesState = { academia: false };
+const TOOLS_ACADEMIA = new Set([
+  "crm_find_academia_classes",
+  "crm_get_academia_info",
+]);
 
 export function catalogoComHandler(modulos: ModulesState = MODULOS_DESLIGADOS) {
   const comHandler = new Set(allTools.map((t) => t.name));
   return TOOL_CATALOG.filter(
     (c) =>
       comHandler.has(c.name) &&
-      (c.name !== "crm_find_academia_classes" || modulos.academia),
+      (!TOOLS_ACADEMIA.has(c.name) || modulos.academia),
   );
 }
 

@@ -23,12 +23,13 @@ const CATALOGO = catalogoComHandler({ academia: false });
 const porNome = new Map(TOOL_CATALOG.map((c) => [c.name, c]));
 
 describe("capacidades padrão do onboarding", () => {
-  it("só liga a consulta da grade quando a organização tem o módulo Academia", () => {
-    expect(capacidadesPadraoDoOnboarding({ academia: false })).not.toContain(
-      "crm_find_academia_classes",
+  it("só liga as consultas da academia quando a organização tem o módulo", () => {
+    const toolsAcademia = ["crm_find_academia_classes", "crm_get_academia_info"];
+    expect(capacidadesPadraoDoOnboarding({ academia: false })).not.toEqual(
+      expect.arrayContaining(toolsAcademia),
     );
-    expect(capacidadesPadraoDoOnboarding({ academia: true })).toContain(
-      "crm_find_academia_classes",
+    expect(capacidadesPadraoDoOnboarding({ academia: true })).toEqual(
+      expect.arrayContaining(toolsAcademia),
     );
   });
 

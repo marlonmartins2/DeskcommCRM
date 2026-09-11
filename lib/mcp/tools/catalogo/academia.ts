@@ -11,4 +11,14 @@ export const TOOLS_ACADEMIA = declararTools([
     risco: "seguro",
     pacotes: ["vender"],
   },
+  {
+    name: "crm_get_academia_info",
+    category: "read",
+    rotulo: "Consultar informações da academia",
+    explicacao:
+      "Consulta endereço, contatos, funcionamento semanal e regras diretamente nas informações oficiais da academia.",
+    oQueToca: "Informações operacionais da academia",
+    risco: "seguro",
+    pacotes: ["vender"],
+  },
 ]);
