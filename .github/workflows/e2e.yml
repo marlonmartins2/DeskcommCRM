@@ -604,6 +604,7 @@ jobs:
         academia-modulo-local.spec.ts
         academia-cadastros-local.spec.ts
         academia-grade-local.spec.ts
+        academia-informacoes-local.spec.ts
         vps-fresh-onboarding.spec.ts
         inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts
