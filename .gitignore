@@ -96,6 +96,7 @@ loop/locks/
 loop/STOP
 loop/run-session.sh
 .superpowers/
+.worktrees/
 
 # graphify (análise local de knowledge graph)
 graphify-out/
