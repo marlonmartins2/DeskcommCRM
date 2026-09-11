@@ -95,6 +95,34 @@ describe("apiClient", () => {
     const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>;
     expect(headers["Idempotency-Key"]).toBe("custom-key-123");
   });
+
+  it("t8: timeout carrega um motivo descritivo — não a mensagem genérica do navegador", async () => {
+    // `fetch` real, ligado a um signal abortado, rejeita com o `.reason` desse
+    // signal — é esse contrato que este mock reproduz.
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        }),
+    );
+
+    const err: unknown = await apiClient
+      .get("/x", { timeoutMs: 5 })
+      .catch((e: unknown) => e);
+
+    // `DOMException` não é `instanceof Error` no Node — checa `.name`/`.message`
+    // diretamente, que é a mesma superfície que qualquer chamador consulta.
+    const e = err as { name: string; message: string };
+    // O bug: `AbortController.abort()` sem argumento sintetiza um DOMException
+    // cuja MENSAGEM LITERAL é "signal is aborted without reason" — foi isso
+    // que chegou à tela como "Runtime AbortError". Trava as duas pontas: o
+    // motivo tem nome reconhecível (a mesma convenção de `TimeoutError` que o
+    // cliente HTTP da camada de canal já usa) e a mensagem genérica do
+    // navegador não aparece mais.
+    expect(e.name).toBe("TimeoutError");
+    expect(e.message).not.toMatch(/aborted without reason/i);
+    expect(e.message).toMatch(/\d+ms/);
+  }, 10_000);
 });
 
 /**

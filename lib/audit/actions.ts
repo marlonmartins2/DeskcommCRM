@@ -72,6 +72,10 @@ export const AUDIT_ACTIONS = [
   "member.accepted",
   "member.role_changed",
   "member.revoked",
+  // O inverso de `member.revoked`. Auditável pelo mesmo motivo que ela: a
+  // pergunta "quem devolveu o acesso desta pessoa, e quando?" só tem resposta
+  // aqui — a coluna `revoked_at` volta a NULL e não guarda histórico.
+  "member.reactivated",
   "token.created",
   "token.revoked",
   "profile.updated",

@@ -6014,6 +6014,23 @@ export const DICIONARIO: Traducoes = {
   "Esse convite expirou ou não é mais válido. Peça um novo a quem te convidou — criar uma conta agora abriria uma empresa nova, e não é isso que você quer.": {
     es: "Esa invitación venció o ya no es válida. Pide una nueva a quien te invitó — crear una cuenta ahora abriría una empresa nueva, y no es eso lo que quieres.",
   },
+  // ── Revogação reversível (2026-09-10) ─────────────────────────────────────
+  // ("Revogado" já existe mais acima — a chave é o texto, então repetir é erro
+  //  de compilação, e é assim que o dicionário evita duas traduções da mesma
+  //  frase divergirem.)
+  "Devolver acesso": { es: "Devolver el acceso" },
+  // ("Seu nome" já existe mais acima — a chave é o próprio texto.)
+  "Informe seu nome": { es: "Escribe tu nombre" },
+  "Você já tem uma conta com este e-mail": {
+    es: "Ya tienes una cuenta con este correo",
+  },
+  "Entre com ela para aceitar o convite — não é preciso criar outra.": {
+    es: "Entra con ella para aceptar la invitación — no hace falta crear otra.",
+  },
+  "Entrar e aceitar o convite": { es: "Entrar y aceptar la invitación" },
+  "Recebeu um convite novo? Abra o link que chegou no seu e-mail — ele funciona mesmo com esta tela aberta, e devolve o seu acesso.": {
+    es: "¿Recibiste una invitación nueva? Abre el enlace que llegó a tu correo — funciona incluso con esta pantalla abierta, y te devuelve el acceso.",
+  },
   "Já tem conta?": { es: "¿Ya tienes cuenta?" },
   "Email ou senha incorretos.": { es: "Correo o contraseña incorrectos." },
   "Erro inesperado. Tente novamente.": { es: "Error inesperado. Intenta de nuevo." },

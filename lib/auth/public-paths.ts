@@ -39,6 +39,16 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
   /^\/api\/internal\//,
   /^\/api\/mcp(\/.*)?$/,
+  // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a
+  // MESMA dualidade de `/api/mcp` acima. Sem esta entrada, o proxy responde
+  // 401 antes de o Bearer chegar à rota, porque `getUser()` aqui só enxerga
+  // cookie. A auth de verdade (sessão OU token, org nunca vinda do cliente)
+  // mora DENTRO da rota (`app/api/v1/contacts/route.ts`), igual aos casos de
+  // `/api/v1/system/agent` e `/api/v1/cron/` acima — "público" aqui quer dizer
+  // "o proxy não decide", não "sem autenticação". Ancorado com `$`: só o
+  // `GET` da listagem, não `/api/v1/contacts/[id]` nem `/import`, que ainda
+  // não têm suporte a Bearer.
+  /^\/api\/v1\/contacts$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

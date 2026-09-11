@@ -44,6 +44,22 @@ export default async function AcessoRevogadoPage() {
             idioma,
           )}
         </p>
+        {/*
+          A tela era um BECO. Medido em produção em 2026-09-10: quem foi
+          revogado e recebeu convite novo entra pelo login, cai aqui antes de
+          conseguir usar o convite, e encontra só o botão Sair — com o link
+          válido no bolso e nenhuma indicação de que ele funciona.
+
+          O endereço do convite fica FORA da área trancada (ele está em
+          `lib/auth/public-paths.ts`), então abrir o link daqui funciona. O que
+          faltava era alguém dizer isso.
+        */}
+        <p className="rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm dark:border-amber-500/30 dark:bg-amber-950/20">
+          {traduzir(
+            "Recebeu um convite novo? Abra o link que chegou no seu e-mail — ele funciona mesmo com esta tela aberta, e devolve o seu acesso.",
+            idioma,
+          )}
+        </p>
         <form action={signOut}>
           <Button type="submit" className="w-full">
             {traduzir("Sair", idioma)}

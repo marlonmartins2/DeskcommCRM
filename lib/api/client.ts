@@ -205,7 +205,19 @@ async function request<T>(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+    // Motivo explícito, não `abort()` puro: sem ele o navegador sintetiza um
+    // `DOMException` cuja MENSAGEM é "signal is aborted without reason" — que
+    // chegava ao usuário como erro de runtime, sem dizer que foi um timeout.
+    // `name: "TimeoutError"` segue a convenção já em vigor no repo para timeout
+    // de fetch: o cliente HTTP da camada de canal usa `AbortSignal.timeout()`,
+    // cujo motivo nativo tem exatamente esse nome. Assim quem já checa
+    // `err.name === "TimeoutError"` (`lib/ai/credenciais/erro-de-validacao.ts`)
+    // também reconhece este.
+    const timer = setTimeout(() => {
+      timeoutController.abort(
+        new DOMException(`A requisição não respondeu em ${timeoutMs}ms.`, "TimeoutError"),
+      );
+    }, timeoutMs);
     const signal = combineSignals([timeoutController.signal, opts.signal]);
 
     try {
