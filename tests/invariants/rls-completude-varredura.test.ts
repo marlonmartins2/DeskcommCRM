@@ -76,6 +76,18 @@ interface Excecao {
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
   {
+    tabela: "academia_profiles",
+    razao:
+      "tests/invariants/academia-information.test.ts — viewer da organização lê, " +
+      "membro manager de outra organização não lê e módulo desligado oculta sem apagar",
+  },
+  {
+    tabela: "academia_opening_hours",
+    razao:
+      "tests/invariants/academia-information.test.ts — período é visível ao viewer local, " +
+      "isolado do outro tenant e sem DML direto para authenticated",
+  },
+  {
     tabela: "academia_audiences",
     razao:
       "tests/invariants/academia-catalogs.test.ts — viewer da organização lê, " +
