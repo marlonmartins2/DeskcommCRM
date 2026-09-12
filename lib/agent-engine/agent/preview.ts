@@ -25,7 +25,10 @@ import {
   sinalDeConversaSobreGrade,
   sinalDePedidoComercialDaAcademia,
 } from '@/lib/academia/consulta-grade';
-import { sinalDeConversaSobreInformacoesAcademia } from '@/lib/academia/consulta-informacoes';
+import {
+  assuntosSolicitadosNasInformacoesAcademia,
+  sinalDeExcecaoNasInformacoesAcademia,
+} from '@/lib/academia/consulta-informacoes';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -71,6 +74,9 @@ export async function previewGateContext(
   if (p.gateContext) return { ...p.gateContext, now };
   const org = p.organizationId,
     channel = p.channelId;
+  const academiaInformationRequiredSubjects = p.agent.toolIds.includes('crm_get_academia_info')
+    ? assuntosSolicitadosNasInformacoesAcademia(p.context.context.messages)
+    : [];
   const cfg = channel
     ? await loadChannelKnobs(db, org, channel, log)
     : { knobs: PACING_DEFAULTS, numberActivatedAt: null };
@@ -133,10 +139,13 @@ export async function previewGateContext(
       ),
     },
     academiaInformation: {
-      active:
-        p.agent.toolIds.includes('crm_get_academia_info') &&
-        sinalDeConversaSobreInformacoesAcademia(p.context.context.messages),
-      toolCalledThisTurn: false,
+      active: academiaInformationRequiredSubjects.length > 0,
+      available: p.agent.toolIds.includes('crm_get_academia_info'),
+      status: 'not_called',
+      requiredSubjects: academiaInformationRequiredSubjects,
+      succeededSubjects: [],
+      exceptionActive: sinalDeExcecaoNasInformacoesAcademia(p.context.context.messages),
+      handoffSucceededThisTurn: false,
     },
     internalVocabularyEnforced: true,
   };

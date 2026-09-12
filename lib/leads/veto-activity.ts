@@ -61,6 +61,8 @@ export function vetoReason(gate: string, code: string): string {
       "Não enviei: a mensagem usava termos internos do sistema que o cliente não deve ler",
     academia_grade_stall:
       "Não enviei: faltou consultar a grade cadastrada antes de informar o horário da aula",
+    academia_information_stall:
+      "Não enviei: faltou consultar as informações cadastradas da academia antes de responder",
   };
   return porGate[gate] ?? `Não enviei: bloqueado pela regra "${gate}" (${code})`;
 }

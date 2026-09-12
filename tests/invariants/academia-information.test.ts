@@ -109,6 +109,10 @@ describe.sequential("informações operacionais da academia no banco", () => {
       (await as(viewer, "select weekday,opens_at::text,closes_at::text from public.academia_opening_hours where organization_id=$1", [org]))
         .rows[0],
     ).toEqual({ weekday: 1, opens_at: "05:00:00", closes_at: "23:00:00" });
+    expect(
+      (await as(outsider, "select weekday from public.academia_opening_hours where organization_id=$1", [org]))
+        .rowCount,
+    ).toBe(0);
   });
 
   it("recusa viewer, tenant alheio e revisão antiga", async () => {

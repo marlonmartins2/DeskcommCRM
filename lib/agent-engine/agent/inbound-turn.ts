@@ -4,7 +4,14 @@ import {
   sinalDeConversaSobreGrade,
   sinalDePedidoComercialDaAcademia,
 } from '@/lib/academia/consulta-grade';
-import { sinalDeConversaSobreInformacoesAcademia } from '@/lib/academia/consulta-informacoes';
+import {
+  acompanharConsultaInformacoesAcademia,
+  assuntosSolicitadosNasInformacoesAcademia,
+  criarEstadoConsultaInformacoesAcademia,
+  ehAssuntoInformacaoAcademia,
+  podeExecutarHandoffDeInformacaoAcademia,
+  sinalDeExcecaoNasInformacoesAcademia,
+} from '@/lib/academia/consulta-informacoes';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
@@ -2251,7 +2258,8 @@ async function executarTurnoDoAgente(
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
   let academiaGradeToolCalledThisTurn = false;
-  let academiaInformationToolCalledThisTurn = false;
+  let academiaInformationToolAvailableThisTurn = false;
+  let academiaInformationHandoffSucceededThisTurn = false;
   const outcomes: ChannelSendResult[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -2274,10 +2282,17 @@ async function executarTurnoDoAgente(
     agentConfig !== null &&
     agentConfig.toolIds.includes('crm_find_academia_classes') &&
     sinalDeConversaSobreGrade(effectiveContext.messages);
-  const academiaInformationRequestActive =
-    agentConfig !== null &&
-    agentConfig.toolIds.includes('crm_get_academia_info') &&
-    sinalDeConversaSobreInformacoesAcademia(effectiveContext.messages);
+  const academiaInformationRequiredSubjects =
+    agentConfig !== null && agentConfig.toolIds.includes('crm_get_academia_info')
+      ? assuntosSolicitadosNasInformacoesAcademia(effectiveContext.messages)
+      : [];
+  const academiaInformationRequestActive = academiaInformationRequiredSubjects.length > 0;
+  const academiaInformationExceptionActive =
+    academiaInformationRequestActive &&
+    sinalDeExcecaoNasInformacoesAcademia(effectiveContext.messages);
+  const academiaInformationQueryState = criarEstadoConsultaInformacoesAcademia(
+    academiaInformationRequiredSubjects,
+  );
   const academiaGradeCommercialFollowupAllowed = sinalDePedidoComercialDaAcademia(
     currentInboundText ?? skillSignal,
   );
@@ -2656,7 +2671,12 @@ async function executarTurnoDoAgente(
             },
             academiaInformation: {
               active: academiaInformationRequestActive,
-              toolCalledThisTurn: academiaInformationToolCalledThisTurn,
+              available: academiaInformationToolAvailableThisTurn,
+              status: academiaInformationQueryState.status(),
+              requiredSubjects: academiaInformationRequiredSubjects,
+              succeededSubjects: academiaInformationQueryState.assuntosConcluidos(),
+              exceptionActive: academiaInformationExceptionActive,
+              handoffSucceededThisTurn: academiaInformationHandoffSucceededThisTurn,
             },
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
@@ -3041,6 +3061,23 @@ async function executarTurnoDoAgente(
       ...AGENT_TOOL_DEFS.request_human_handoff,
       execute: async (raw) => {
         try {
+          const academiaInformationStatus = academiaInformationQueryState.status();
+          if (!podeExecutarHandoffDeInformacaoAcademia({
+            active: academiaInformationRequestActive,
+            available: academiaInformationToolAvailableThisTurn,
+            status: academiaInformationStatus,
+            exceptionActive: academiaInformationExceptionActive,
+          })) {
+            return {
+              ok: false,
+              error: {
+                code: 'academia_information_consult_first',
+                message:
+                  'Consulte todos os assuntos pedidos com crm_get_academia_info antes de ' +
+                  'responder. O handoff não substitui uma consulta operacional disponível.',
+              },
+            };
+          }
           // ═══ O PISO: se o modelo não falou, o sistema fala ═══
           //
           // A descrição da tool manda avisar o lead ANTES de chamá-la, e a
@@ -3073,6 +3110,7 @@ async function executarTurnoDoAgente(
             raw,
           );
           if (!res.ok) return res; // erro de ensino (payload fora da whitelist)
+          academiaInformationHandoffSucceededThisTurn = true;
           return { ok: true, status: res.status, message: res.message };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -3164,7 +3202,11 @@ async function executarTurnoDoAgente(
 
   // Fase 2B: a tela pode DESLIGAR a tool de handoff do modelo (a detecção
   // determinística de pedido de humano continua ativa — guardrail nunca sai).
-  if (agentConfig !== null && !agentConfig.handoffToolEnabled) {
+  if (
+    agentConfig !== null &&
+    !agentConfig.handoffToolEnabled &&
+    !academiaInformationRequestActive
+  ) {
     delete rawTools.request_human_handoff;
   }
 
@@ -3332,6 +3374,7 @@ async function executarTurnoDoAgente(
             const marcaAgenda = AGENDA_TOOL_NAMES.has(name);
             const marcaGradeAcademia = ACADEMIA_GRADE_TOOL_NAMES.has(name);
             const marcaInformacaoAcademia = ACADEMIA_INFORMATION_TOOL_NAMES.has(name);
+            if (marcaInformacaoAcademia) academiaInformationToolAvailableThisTurn = true;
             if (
               (marcaAgenda || marcaGradeAcademia || marcaInformacaoAcademia) &&
               typeof mcpTool.execute === 'function'
@@ -3342,7 +3385,19 @@ async function executarTurnoDoAgente(
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
                   if (marcaAgenda) agendaToolCalledThisTurn = true;
                   if (marcaGradeAcademia) academiaGradeToolCalledThisTurn = true;
-                  if (marcaInformacaoAcademia) academiaInformationToolCalledThisTurn = true;
+                  if (marcaInformacaoAcademia) {
+                    const argumento = args[0];
+                    const assunto =
+                      typeof argumento === 'object' && argumento !== null &&
+                      'subject' in argumento && ehAssuntoInformacaoAcademia(argumento.subject)
+                        ? argumento.subject
+                        : null;
+                    return acompanharConsultaInformacoesAcademia(
+                      () => executeOriginal(...args),
+                      assunto,
+                      academiaInformationQueryState.registrar,
+                    );
+                  }
                   return executeOriginal(...args);
                 }) as typeof mcpTool.execute,
               };
@@ -3416,6 +3471,15 @@ async function executarTurnoDoAgente(
                 ...previewContext.disclosure,
                 mode: deps.knobs.disclosureMode ?? 'inject',
               },
+              academiaInformation: {
+                active: previewContext.academiaInformation?.active ?? false,
+                available: academiaInformationToolAvailableThisTurn,
+                status: academiaInformationQueryState.status(),
+                requiredSubjects: academiaInformationRequiredSubjects,
+                succeededSubjects: academiaInformationQueryState.assuntosConcluidos(),
+                exceptionActive: previewContext.academiaInformation?.exceptionActive ?? false,
+                handoffSucceededThisTurn: academiaInformationHandoffSucceededThisTurn,
+              },
             },
             () => pendingCitations,
             semanticClassifier,
@@ -3432,7 +3496,12 @@ async function executarTurnoDoAgente(
               },
               academiaInformation: {
                 active: previewContext.academiaInformation?.active ?? false,
-                toolCalledThisTurn: academiaInformationToolCalledThisTurn,
+                available: academiaInformationToolAvailableThisTurn,
+                status: academiaInformationQueryState.status(),
+                requiredSubjects: academiaInformationRequiredSubjects,
+                succeededSubjects: academiaInformationQueryState.assuntosConcluidos(),
+                exceptionActive: previewContext.academiaInformation?.exceptionActive ?? false,
+                handoffSucceededThisTurn: academiaInformationHandoffSucceededThisTurn,
               },
             }),
           )

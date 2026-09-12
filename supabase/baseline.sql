@@ -23717,9 +23717,9 @@ begin
     nullif(btrim(p_public_rules), ''),v_new_revision
   )
   on conflict (organization_id) do update set
-    address=excluded.address,phone=excluded.phone,whatsapp=excluded.whatsapp,
-    email=excluded.email,public_rules=excluded.public_rules,
-    revision=excluded.revision,updated_at=clock_timestamp();
+    address = excluded.address, phone = excluded.phone, whatsapp = excluded.whatsapp,
+    email = excluded.email, public_rules = excluded.public_rules,
+    revision = excluded.revision, updated_at = clock_timestamp();
 
   update public.organizations set timezone = p_timezone where id = p_org;
   delete from public.academia_opening_hours where organization_id = p_org;

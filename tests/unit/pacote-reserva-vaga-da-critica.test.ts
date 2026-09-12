@@ -7,7 +7,7 @@
  * nunca entra por pacote** — o humano tem de marcar à mão, e a tela diz isso
  * ("o pacote não liga por você"). O teto (`TETO_TOOLS_POR_AGENTE`) existe por
  * outro motivo, também escrito: prompt com capacidade demais degrada a escolha
- * do modelo. O número dele já mudou uma vez (20 → 25) e por isso não se repete
+ * do modelo. O número dele já mudou mais de uma vez e por isso não se repete
  * aqui: quem precisar do valor de hoje lê a constante.
  *
  * As duas regras se cancelavam. Ligar "Atender" traz 17 automáticas; somadas ao
@@ -133,7 +133,7 @@ describe("ligar pacote reserva a vaga das próprias críticas", () => {
     //
     // ⚠️ O NÚMERO SAIU DESTE COMENTÁRIO de propósito. Ele dizia "medido em
     // 2026-08-06: o maior é 18 contra teto 20", e venceu duas vezes no mesmo
-    // mês — o catálogo foi de 51 para 57 capacidades e o teto de 20 para 25.
+    // mês — catálogo e teto continuaram crescendo desde a primeira medição.
     // Número em prosa envelhece calado; a asserção abaixo não, porque deriva as
     // duas pontas do código. Quem quiser o valor de hoje roda o teste.
     for (const pacote of COM_CRITICA) {

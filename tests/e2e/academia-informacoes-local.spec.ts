@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
 type InformationPayload = {
   revision: number;
@@ -56,6 +57,12 @@ test("informações da academia persistem, detectam conflito e cabem no celular"
     await page.getByLabel("E-mail", { exact: true }).fill("academia@example.com");
     await page.getByLabel("Regras e orientações", { exact: true }).fill("Leve toalha.");
     await page.getByLabel("Segunda-feira aberta").check();
+    await page.getByLabel("Abertura de Segunda-feira").fill("23:00");
+    await page.getByLabel("Fechamento de Segunda-feira").fill("05:00");
+    await page.getByRole("button", { name: "Salvar informações", exact: true }).click();
+    await expect(page.locator('p[role="alert"]')).toContainText(
+      "O fechamento deve ser posterior à abertura",
+    );
     await page.getByLabel("Abertura de Segunda-feira").fill("05:00");
     await page.getByLabel("Fechamento de Segunda-feira").fill("23:00");
     const sunday = page.getByLabel("Domingo aberto");
@@ -87,7 +94,7 @@ test("informações da academia persistem, detectam conflito e cabem no celular"
     expect(concurrent.status()).toBe(200);
     await page.getByLabel("Regras e orientações", { exact: true }).fill("Tentativa com revisão antiga.");
     await page.getByRole("button", { name: "Salvar informações", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Recarregue a página");
+    await expect(page.locator('p[role="alert"]')).toContainText("Recarregue a página");
 
     await page.reload();
     await page.getByRole("button", { name: "Informações", exact: true }).click();
@@ -105,5 +112,58 @@ test("informações da academia persistem, detectam conflito e cabem no celular"
       });
       expect(restored.status()).toBe(200);
     }
+  }
+});
+
+test("perfil de consulta vê os dados sem receber ações de gravação", async ({ page }) => {
+  test.skip(!process.env.ACADEMIA_E2E_EMAIL || !process.env.ACADEMIA_E2E_PASSWORD);
+  const admin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+
+  await page.goto("/login");
+  await page.locator("#email").fill(process.env.ACADEMIA_E2E_EMAIL!);
+  await page.locator("#password").fill(process.env.ACADEMIA_E2E_PASSWORD!);
+  await page.getByRole("button", { name: /entrar/i }).click();
+  await page.waitForURL(/\/app(?:\/|$)/);
+  const interfaceResponse = await page.request.get("/api/v1/auth/interface");
+  expect(interfaceResponse.status()).toBe(200);
+  const organizationId = (await interfaceResponse.json()).data.organization_id as string;
+  const { data: listed, error: usersError } = await admin.auth.admin.listUsers({ perPage: 200 });
+  expect(usersError).toBeNull();
+  const user = listed.users.find((item) => item.email === process.env.ACADEMIA_E2E_EMAIL);
+  expect(user).toBeTruthy();
+  const { data: membership, error: membershipError } = await admin
+    .from("user_organizations")
+    .select("role")
+    .eq("organization_id", organizationId)
+    .eq("user_id", user!.id)
+    .maybeSingle();
+  expect(membershipError).toBeNull();
+  expect(membership).toBeTruthy();
+  const originalRole = membership!.role;
+
+  const { error: downgradeError } = await admin
+    .from("user_organizations")
+    .update({ role: "viewer" })
+    .eq("organization_id", organizationId)
+    .eq("user_id", user!.id);
+  expect(downgradeError).toBeNull();
+
+  try {
+    await page.goto("/app/academia");
+    await page.getByRole("button", { name: "Informações", exact: true }).click();
+    await expect(page.getByText("Administradores e gestores podem editar estas informações.")).toBeVisible();
+    await expect(page.getByLabel("Endereço", { exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Salvar informações", exact: true })).toHaveCount(0);
+  } finally {
+    const { error: restoreError } = await admin
+      .from("user_organizations")
+      .update({ role: originalRole })
+      .eq("organization_id", organizationId)
+      .eq("user_id", user!.id);
+    expect(restoreError).toBeNull();
   }
 });

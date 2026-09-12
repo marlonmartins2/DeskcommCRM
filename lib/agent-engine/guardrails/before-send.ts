@@ -42,6 +42,10 @@ import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agen
  */
 import type pg from 'pg';
 import type { ChannelSendResult } from '../channel-adapter';
+import type {
+  AssuntoInformacaoAcademia,
+  StatusDaConsultaInformacoesAcademia,
+} from '@/lib/academia/consulta-informacoes';
 
 import type { Logger } from '../obs/logger';
 import { emitVetoActivity } from '@/lib/leads/veto-activity';
@@ -255,8 +259,16 @@ export interface GateContext {
     toolCalledThisTurn: boolean;
     commercialFollowupAllowed?: boolean;
   };
-  /** Arma a exigência de consulta das informações operacionais oficiais. Ausente = no-op. */
-  academiaInformation?: { active: boolean; toolCalledThisTurn: boolean };
+  /** Arma a consulta operacional e distingue ausência, falha e sucesso reais. Ausente = no-op. */
+  academiaInformation?: {
+    active: boolean;
+    available: boolean;
+    status: StatusDaConsultaInformacoesAcademia;
+    requiredSubjects: readonly AssuntoInformacaoAcademia[];
+    succeededSubjects: readonly AssuntoInformacaoAcademia[];
+    exceptionActive: boolean;
+    handoffSucceededThisTurn: boolean;
+  };
 }
 
 /**
@@ -591,37 +603,46 @@ export const academiaGradeStallGate: Gate = {
   },
 };
 
-const ACADEMIA_INFORMATION_FACT_PATTERN =
-  /\b(abrimos|abre|abertura|fechamos|fecha|fechamento|funcionamento|horario regular)\b[^.!?\n]{0,100}\b([01]\d|2[0-3]):[0-5]\d\b/i;
-const ACADEMIA_INFORMATION_EXCEPTION_PATTERN =
-  /\b(feriados?|recessos?|excecoes?|data especifica)\b/i;
-const ACADEMIA_INFORMATION_HANDOFF_PATTERN =
-  /\b(equipe|atendente|atendimento humano|encaminhar|encaminho|responsavel)\b/i;
-
-/** Impede promessa vazia e funcionamento inventado quando a consulta está disponível. */
+/** Impede promessa vazia, consulta falha e exceção sem handoff efetivo. */
 export const academiaInformationStallGate: Gate = {
   name: 'academia_information_stall',
   evaluate: (ctx) => {
-    if (ctx.academiaInformation === undefined || !ctx.academiaInformation.active) {
+    const state = ctx.academiaInformation;
+    if (state === undefined || !state.active) {
       return { pass: true };
     }
-    if (ctx.academiaInformation.toolCalledThisTurn) return { pass: true };
-    const body = semAcento(ctx.body);
-    if (
-      ACADEMIA_INFORMATION_EXCEPTION_PATTERN.test(body) &&
-      ACADEMIA_INFORMATION_HANDOFF_PATTERN.test(body) &&
-      !ACADEMIA_INFORMATION_FACT_PATTERN.test(body)
-    ) {
-      return { pass: true };
+    if (state.exceptionActive) {
+      if (state.handoffSucceededThisTurn) return { pass: true };
+      return {
+        pass: false,
+        code: 'academia_information_stall_handoff_obrigatorio',
+        reason:
+          'Feriado, recesso ou data específica exige handoff concluído, não promessa em texto. ' +
+          'Chame request_human_handoff agora e não afirme o funcionamento.',
+      };
+    }
+    const assuntosPendentes = state.requiredSubjects.filter(
+      (assunto) => !state.succeededSubjects.includes(assunto),
+    );
+    if (state.status === 'succeeded' && assuntosPendentes.length === 0) return { pass: true };
+    if (!state.available || state.status === 'failed') {
+      if (state.handoffSucceededThisTurn) return { pass: true };
+      return {
+        pass: false,
+        code: 'academia_information_stall_consulta_indisponivel',
+        reason:
+          'A consulta oficial não está disponível ou falhou. Não invente dados: chame ' +
+          'request_human_handoff e encerre o turno.',
+      };
     }
     return {
       pass: false,
       code: 'academia_information_stall_sem_ferramenta',
       reason:
-        'Você tentou adiar a consulta ou afirmar o funcionamento sem chamar ' +
-        'crm_get_academia_info NESTE turno. Chame a ferramenta agora e responda com base ' +
-        'no cadastro oficial; para feriado, recesso ou exceção, explique o limite e encaminhe ' +
-        'para atendimento humano sem afirmar o horário.',
+        'Você tentou adiar a consulta ou afirmar informação operacional sem consultar todos ' +
+        `os assuntos pedidos (${assuntosPendentes.join(', ') || 'nenhum confirmado'}) com ` +
+        'crm_get_academia_info NESTE turno. Consulte cada assunto e responda com base no ' +
+        'cadastro oficial. Handoff não substitui uma consulta disponível.',
     };
   },
 };
@@ -954,7 +975,7 @@ export interface RunBeforeSendArgs {
     commercialFollowupAllowed?: boolean;
   };
   /** Arma o `academiaInformationStallGate` para esta tentativa. */
-  academiaInformation?: { active: boolean; toolCalledThisTurn: boolean };
+  academiaInformation?: GateContext['academiaInformation'];
   /**
    * Enviado SÓ se TODOS os gates passarem — ChannelAdapter (própria tx/idempotência). Recebe o
    * corpo FINAL (o disclosureGate F4-05 pode emendá-lo via `amendBody`): quem monta o send DEVE

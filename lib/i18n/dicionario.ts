@@ -76,6 +76,7 @@ export const DICIONARIO: Traducoes = {
   "Funcionamento semanal": { es: "Horario de funcionamiento semanal" },
   "Cada dia aberto tem um único período contínuo de abertura e fechamento.": { es: "Cada día abierto tiene un único período continuo de apertura y cierre." },
   "aberta": { es: "abierto" },
+  "Fechado": { es: "Cerrado" },
   "Abertura": { es: "Apertura" },
   "Abertura de": { es: "Apertura del" },
   "Fechamento": { es: "Cierre" },

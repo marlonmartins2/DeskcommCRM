@@ -6,6 +6,11 @@ import { applyPreviewPolicy, newPreviewResult, scenarioContext, type TurnPreview
 import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
+import {
+  acompanharConsultaInformacoesAcademia,
+  criarEstadoConsultaInformacoesAcademia,
+  ehAssuntoInformacaoAcademia,
+} from '@/lib/academia/consulta-informacoes';
 const gate = (): GateContext => ({
   now: new Date('2026-09-07T15:00:00Z'),
   body: 'Olá, posso ajudar?',
@@ -177,16 +182,29 @@ it('consulta a grade real no cenário e só libera o horário depois da execuç�
 
 it('consulta informações reais no cenário e só libera funcionamento depois da execução', async () => {
   const p = preview();
-  let called = false;
+  const queryState = criarEstadoConsultaInformacoesAcademia(['opening_hours']);
   const ctx = {
     ...gate(),
-    academiaInformation: { active: true, toolCalledThisTurn: false },
+    academiaInformation: {
+      active: true,
+      available: true,
+      status: 'not_called' as const,
+      requiredSubjects: ['opening_hours'] as const,
+      succeededSubjects: [] as const,
+      exceptionActive: false,
+      handoffSucceededThisTurn: false,
+    },
   };
   const tools = applyPreviewPolicy(
     {
-      crm_get_academia_info: definition(() => {
-        called = true;
-        return { source: 'cadastro_operacional', opening_hours: { opens_at: '05:00' } };
+      crm_get_academia_info: definition(async (args) => {
+        const subject = typeof args === 'object' && args !== null && 'subject' in args &&
+          ehAssuntoInformacaoAcademia(args.subject) ? args.subject : null;
+        return acompanharConsultaInformacoesAcademia(
+          async () => ({ source: 'cadastro_operacional', opening_hours: { opens_at: '05:00' } }),
+          subject,
+          queryState.registrar,
+        );
       }),
       send_message: definition(vi.fn()),
     },
@@ -195,7 +213,15 @@ it('consulta informações reais no cenário e só libera funcionamento depois d
     () => [],
     undefined,
     () => ({
-      academiaInformation: { active: true, toolCalledThisTurn: called },
+      academiaInformation: {
+        active: true,
+        available: true,
+        status: queryState.status(),
+        requiredSubjects: ['opening_hours'],
+        succeededSubjects: queryState.assuntosConcluidos(),
+        exceptionActive: false,
+        handoffSucceededThisTurn: false,
+      },
     }),
   );
 
@@ -205,8 +231,12 @@ it('consulta informações reais no cenário e só libera funcionamento depois d
       item.code === 'academia_information_stall_sem_ferramenta'),
   ).toBe(true);
 
+  await execute(tools, 'crm_get_academia_info', { subject: 'address' });
+  await execute(tools, 'send_message', { body: 'Na segunda, abrimos às 05:00.' });
+  expect(p.result.candidates).toHaveLength(0);
+
   await execute(tools, 'crm_get_academia_info', { subject: 'opening_hours', weekday: 1 });
-  expect(called).toBe(true);
+  expect(queryState.assuntosConcluidos()).toContain('opening_hours');
   await execute(tools, 'send_message', {
     body: 'Na segunda, o horário regular começa às 05:00.',
   });

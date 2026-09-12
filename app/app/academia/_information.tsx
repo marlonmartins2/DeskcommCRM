@@ -197,10 +197,15 @@ export function AcademiaInformation({ canEdit }: { canEdit: boolean }) {
             {weekdays.map((day) => {
               const period = information.opening_hours.find((item) => item.weekday === day.value);
               const dayLabel = t(day.label);
+              const masculineDay = day.value === 6 || day.value === 7;
+              const openLabel = t(masculineDay ? "aberto" : "aberta");
+              const stateLabel = t(period
+                ? masculineDay ? "Aberto" : "Aberta"
+                : masculineDay ? "Fechado" : "Fechada");
               return <div key={day.value} className="grid min-w-0 gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(8rem,0.7fr)_minmax(8rem,0.7fr)] sm:items-end">
                 <label className="flex min-h-10 items-center gap-2 text-sm font-medium">
-                  <input type="checkbox" aria-label={`${dayLabel} ${t("aberta")}`} checked={Boolean(period)} onChange={(event) => toggleDay(day.value, event.target.checked)} />
-                  {dayLabel} · {t(period ? "Aberta" : "Fechada")}
+                  <input type="checkbox" aria-label={`${dayLabel} ${openLabel}`} checked={Boolean(period)} onChange={(event) => toggleDay(day.value, event.target.checked)} />
+                  {dayLabel} · {stateLabel}
                 </label>
                 <div className="min-w-0 space-y-2">
                   <Label htmlFor={`academia-opens-${day.value}`}>{t("Abertura")}</Label>
