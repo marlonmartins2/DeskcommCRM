@@ -1990,3 +1990,67 @@ Produto `7f1d0f3e`, integrado à main `ca895850`: as dez specs de organizações
 Evidência local preservada em `.superpowers/evidence/comunidade-360/final-qa-targeted-r4/` e log `.superpowers/sdd/comunidade-360/final-qa-targeted-r4.log`. A rodada inclui atualização concorrente da interface sem perder formulário, sugestão obsoleta sem confirmação antiga de sucesso e encerramento de suporte com retorno ao contexto original.
 
 Validação integral do mesmo produto: 733 arquivos unitários / 7.911 casos aprovados + 1 falha esperada; 184 arquivos de banco / 1.466 casos aprovados + 1 falha esperada e 1 ignorado, com INSTALL e UPDATE; tipos, lint (0 erros, 344 avisos) e build aprovados. `lint:channels`, validadores shell e conferência de release também passaram. Os checks remotos continuam sendo condição do merge pelo revisor da PR #613.
+
+## Diagnóstico local — J1.5, 2026-09-10
+
+No WSL, WAHA 2026.7.2 / NOWEB / CORE respondeu à API com autenticação válida,
+mas recusou POST /api/sessions: HTTP 400, name acima de 54 caracteres.
+A reserva 0230 concatenava 69 caracteres. Migration 0232 gera 45 mantendo
+UUID aleatório completo e os mesmos guards/leases. O invariante de reserva
+falha na versão anterior e verifica o limite após a correção.
+
+O reparo da instalação local só renomeia sua tentativa após confirmar no
+WAHA a ausência de sessões remotas, ausência de número e de recibos de sucesso
+ou criação remota. Há backup anterior à alteração; a migration genérica
+preserva nomes existentes. Não houve reset de organização ou do onboarding.
+
+Sistema vivo: entrada na escolha QR do onboarding; reserva em
+fn_reserve_channel_connection; transporte WahaClient; saída no proxy do QR;
+recibos/lease e channel.connected continuam existentes. Retry conserva a
+identidade; regressão do limite fica em channel-routing.test.ts. Nenhum novo
+componente de arquitetura ou fluxo de envio foi introduzido.
+
+J1.5 verificado via navegador real: escolha QR, texto "Pronto para conectar",
+imagem carregada (naturalWidth > 0), sem banner de falha. Evidência local em
+`.superpowers/evidence/waha-local-fix/qr-verificado.png` e `verification.json`.
+Aplicação → WAHA autenticado e WAHA → aplicação responderam HTTP 200.
+Pareamento e envio/recebimento de mensagens ainda dependem do celular do usuário.
+
+## Academia opcional — módulo por organização
+
+- Administrador ativa/desativa por Configurações → Módulos da empresa.
+- Desligado: sem menu, busca ou hub; API 403 e página indisponível pelo acesso direto.
+- Religar preserva dados e demais configurações; outra empresa não herda ativação.
+- `tests/e2e/academia-modulo-local.spec.ts` é opt-in: credenciais locais dedicadas e nenhum reset.
+- PostgreSQL verifica admin/manager/cross-org/anon e merge não destrutivo.
+- Mapa: `docs/architecture/academia.md`.
+
+## Cadastros da academia
+
+Em Minha Academia: criar e editar cada tipo, modificar faixa provisória, desativar/reativar;
+repetir POST com a mesma identidade não duplica, PATCH com revisão antiga retorna 409.
+Teste local opt-in `academia-cadastros-local.spec.ts` inclui navegação e viewport 390px.
+`tests/invariants/academia-catalogs.test.ts` prova quatro tabelas, outra empresa, viewer,
+manager, flag, colunas imutáveis e integridade dos limites de idade. Nenhuma mensagem enviada.
+
+## Academia — grade semanal (10/09/2026)
+
+Spec opt-in `tests/e2e/academia-grade-local.spec.ts`: instalação local dedicada, dono por
+`scripts/bootstrap-owner.ts` e banco fresco aplicado de `supabase/baseline.sql`.
+Jornada: ligar módulo pela tela, cadastrar os quatro vínculos, criar aulas simultâneas,
+editar início/duração com virada de dia, desativar/reativar, filtrar dia e usar formulário
+em 390 CSS px. Retry e revisão antiga também exercitados pela API autenticada.
+Evidências locais em `.superpowers/evidence/grade-desktop.png` e
+`.superpowers/evidence/grade-mobile.png`.
+Invariantes `academia-schedule.test.ts`: isolamento, permissões, vínculos cross-tenant,
+revisão, validação temporal, cadastros inativos e módulo desligado.
+Não prova exceções por data ou respostas da IA, ainda fora desta implementação.
+
+Publicada na instalação local do piloto em 10/09/2026, com dump do banco antes
+(`pg_dump` completo) e a migration 0235 aplicada duas vezes para provar a
+idempotência — as contagens de organização, contatos, professores e modalidades
+não se moveram. Validada pela tela na própria instalação, já com atendimento
+real em curso: `.superpowers/evidence/konnen-grade-desktop.png` e
+`.superpowers/evidence/konnen-grade-mobile.png`, ambas sem erro de página e com
+`scrollWidth - clientWidth` igual a zero em 390 CSS px. O retorno é restaurar o
+dump e repontar o `WorkingDirectory` da unit systemd do app.

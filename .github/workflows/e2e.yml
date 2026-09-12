@@ -600,7 +600,11 @@ jobs:
         central-avisos-resolver-em-lote.spec.ts
         voz-desligada-por-padrao.spec.ts
 
+      # academia-*-local usa credenciais explícitas de uma instalação local dedicada.
       FORA_DO_CI: >-
+        academia-modulo-local.spec.ts
+        academia-cadastros-local.spec.ts
+        academia-grade-local.spec.ts
         vps-fresh-onboarding.spec.ts
         inbox-tempo-real.spec.ts
         cadastro-sem-confirmacao-de-email.spec.ts

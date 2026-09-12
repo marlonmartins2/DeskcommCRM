@@ -23271,6 +23271,8 @@ begin
    and id<>receipt.id and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
  update public.channel_connection_requests set state='processing',lease_token=token,lease_until=now()+interval '5 minutes',
   remote_created=false,updated_at=now() where organization_id=p_org and id=receipt.id;
+ -- Não ressuscita antes da pós-condição remota. Arquivado permanece invisível
+ -- até finish; falha conserva identidade e estado FAILED para reparo.
  update public.channel_sessions set status='STARTING',status_reason='connection_pending',last_status_change_at=now()
   where organization_id=p_org and id=channel.id returning * into channel;
  return jsonb_build_object('replay',false,'channel',to_jsonb(channel),'receipt_id',receipt.id,'lease_token',token);
@@ -23386,6 +23388,281 @@ create trigger trg_team_invites_updated_at
 comment on table public.team_invites is
   'Convite de time PENDENTE e seu histórico. O id da linha = invite_id do token HMAC; o aceite casa os dois e recusa convite revogado. Status é derivado, não coluna.';
 
+-- ---- Academia opcional por empresa (migration 0233) ----
+-- 0233 — módulo Academia opt-in por organização; ausência equivale a desligado.
+create or replace function public.fn_definir_modulo_academia(p_org uuid, p_enabled boolean)
+returns boolean language plpgsql security definer set search_path=public as $$
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'admin')
+   or not public.fn_support_write_allowed(p_org) or not public.fn_session_mfa_proven()
+ then raise exception 'module_forbidden' using errcode='42501'; end if;
+ if p_enabled is null then raise exception 'module_invalid' using errcode='22023'; end if;
+ update public.organizations set settings=jsonb_set(coalesce(settings,'{}'::jsonb),'{modules}',
+   (case when jsonb_typeof(settings->'modules')='object' then settings->'modules' else '{}'::jsonb end)
+   || jsonb_build_object('academia',p_enabled),true) where id=p_org;
+ if not found then raise exception 'organization_not_found' using errcode='P0002'; end if;
+ return p_enabled;
+end; $$;
+revoke all on function public.fn_definir_modulo_academia(uuid,boolean) from public,anon,authenticated;
+grant execute on function public.fn_definir_modulo_academia(uuid,boolean) to authenticated;
+notify pgrst,'reload schema';
+
+-- ---- Cadastros da academia (migration 0234) ----
+create or replace function public.fn_academia_catalog_write_allowed(p_org uuid) returns boolean
+language sql stable security definer set search_path=public as $$
+ select auth.uid() is not null and public.fn_role_at_least(p_org,'manager')
+ and public.fn_support_write_allowed(p_org) and public.fn_session_mfa_proven()
+ and exists(select 1 from public.organizations where id=p_org and settings->'modules'->'academia'='true'::jsonb);
+$$;
+revoke all on function public.fn_academia_catalog_write_allowed(uuid) from public,anon,authenticated;
+grant execute on function public.fn_academia_catalog_write_allowed(uuid) to authenticated;
+-- 0234 — cadastros tenant-aware da academia, sem dados comerciais presumidos.
+create or replace function public.fn_academia_catalog_revision() returns trigger
+language plpgsql set search_path=public as $$
+begin
+ new.revision := old.revision + 1;
+ new.updated_at := clock_timestamp();
+ return new;
+end; $$;
+revoke all on function public.fn_academia_catalog_revision() from public,anon,authenticated;
+
+create table if not exists public.academia_audiences (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ name text not null check(length(btrim(name)) between 1 and 120),
+ notes text not null default '' check(length(notes)<=2000),
+ active boolean not null default true,
+ min_age integer check(min_age between 0 and 120),
+ max_age integer check(max_age between 0 and 120),
+ age_pending boolean not null default true,
+ check(min_age is null or max_age is null or min_age<=max_age),
+ revision integer not null default 1,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(),
+ unique(organization_id,id)
+);
+create unique index if not exists academia_audiences_name_unique on public.academia_audiences(organization_id,lower(btrim(name)));
+alter table public.academia_audiences enable row level security;
+revoke all on public.academia_audiences from public,anon,authenticated;
+grant select on public.academia_audiences to authenticated;
+grant insert(id,organization_id,name,notes,active,min_age,max_age,age_pending) on public.academia_audiences to authenticated;
+grant update(name,notes,active,min_age,max_age,age_pending) on public.academia_audiences to authenticated;
+grant all on public.academia_audiences to service_role;
+drop policy if exists tenant_isolation_academia_audiences_all on public.academia_audiences;
+create policy tenant_isolation_academia_audiences_all on public.academia_audiences for select to authenticated
+ using(organization_id in (select public.fn_user_org_ids()) and exists(
+ select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_audiences_insert on public.academia_audiences;
+create policy academia_audiences_insert on public.academia_audiences for insert to authenticated
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_audiences_update on public.academia_audiences;
+create policy academia_audiences_update on public.academia_audiences for update to authenticated
+ using(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb))
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop trigger if exists academia_revision on public.academia_audiences;
+create trigger academia_revision before update on public.academia_audiences for each row execute function public.fn_academia_catalog_revision();
+
+create table if not exists public.academia_modalities (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ name text not null check(length(btrim(name)) between 1 and 120),
+ notes text not null default '' check(length(notes)<=2000),
+ active boolean not null default true,
+ aliases text[] not null default '{}' check(cardinality(aliases)<=20),
+ revision integer not null default 1,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(),
+ unique(organization_id,id)
+);
+create unique index if not exists academia_modalities_name_unique on public.academia_modalities(organization_id,lower(btrim(name)));
+alter table public.academia_modalities enable row level security;
+revoke all on public.academia_modalities from public,anon,authenticated;
+grant select on public.academia_modalities to authenticated;
+grant insert(id,organization_id,name,notes,active,aliases) on public.academia_modalities to authenticated;
+grant update(name,notes,active,aliases) on public.academia_modalities to authenticated;
+grant all on public.academia_modalities to service_role;
+drop policy if exists tenant_isolation_academia_modalities_all on public.academia_modalities;
+create policy tenant_isolation_academia_modalities_all on public.academia_modalities for select to authenticated
+ using(organization_id in (select public.fn_user_org_ids()) and exists(
+ select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_modalities_insert on public.academia_modalities;
+create policy academia_modalities_insert on public.academia_modalities for insert to authenticated
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_modalities_update on public.academia_modalities;
+create policy academia_modalities_update on public.academia_modalities for update to authenticated
+ using(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb))
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop trigger if exists academia_revision on public.academia_modalities;
+create trigger academia_revision before update on public.academia_modalities for each row execute function public.fn_academia_catalog_revision();
+
+create table if not exists public.academia_teachers (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ name text not null check(length(btrim(name)) between 1 and 120),
+ notes text not null default '' check(length(notes)<=2000),
+ active boolean not null default true,
+
+ revision integer not null default 1,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(),
+ unique(organization_id,id)
+);
+create unique index if not exists academia_teachers_name_unique on public.academia_teachers(organization_id,lower(btrim(name)));
+alter table public.academia_teachers enable row level security;
+revoke all on public.academia_teachers from public,anon,authenticated;
+grant select on public.academia_teachers to authenticated;
+grant insert(id,organization_id,name,notes,active) on public.academia_teachers to authenticated;
+grant update(name,notes,active) on public.academia_teachers to authenticated;
+grant all on public.academia_teachers to service_role;
+drop policy if exists tenant_isolation_academia_teachers_all on public.academia_teachers;
+create policy tenant_isolation_academia_teachers_all on public.academia_teachers for select to authenticated
+ using(organization_id in (select public.fn_user_org_ids()) and exists(
+ select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_teachers_insert on public.academia_teachers;
+create policy academia_teachers_insert on public.academia_teachers for insert to authenticated
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_teachers_update on public.academia_teachers;
+create policy academia_teachers_update on public.academia_teachers for update to authenticated
+ using(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb))
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop trigger if exists academia_revision on public.academia_teachers;
+create trigger academia_revision before update on public.academia_teachers for each row execute function public.fn_academia_catalog_revision();
+
+create table if not exists public.academia_spaces (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ name text not null check(length(btrim(name)) between 1 and 120),
+ notes text not null default '' check(length(notes)<=2000),
+ active boolean not null default true,
+
+ revision integer not null default 1,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(),
+ unique(organization_id,id)
+);
+create unique index if not exists academia_spaces_name_unique on public.academia_spaces(organization_id,lower(btrim(name)));
+alter table public.academia_spaces enable row level security;
+revoke all on public.academia_spaces from public,anon,authenticated;
+grant select on public.academia_spaces to authenticated;
+grant insert(id,organization_id,name,notes,active) on public.academia_spaces to authenticated;
+grant update(name,notes,active) on public.academia_spaces to authenticated;
+grant all on public.academia_spaces to service_role;
+drop policy if exists tenant_isolation_academia_spaces_all on public.academia_spaces;
+create policy tenant_isolation_academia_spaces_all on public.academia_spaces for select to authenticated
+ using(organization_id in (select public.fn_user_org_ids()) and exists(
+ select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_spaces_insert on public.academia_spaces;
+create policy academia_spaces_insert on public.academia_spaces for insert to authenticated
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_spaces_update on public.academia_spaces;
+create policy academia_spaces_update on public.academia_spaces for update to authenticated
+ using(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb))
+ with check(public.fn_role_at_least(organization_id,'manager') and public.fn_support_write_allowed(organization_id)
+ and public.fn_academia_catalog_write_allowed(organization_id) and organization_id in (select public.fn_user_org_ids())
+ and exists(select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop trigger if exists academia_revision on public.academia_spaces;
+create trigger academia_revision before update on public.academia_spaces for each row execute function public.fn_academia_catalog_revision();
+notify pgrst,'reload schema';
+
+-- ---- Grade semanal da academia (migration 0235) ----
+-- 0235 — grade semanal de referência; ocorrências e exceções ficam para a próxima etapa.
+-- FKs compostas impedem vínculos entre empresas, inclusive com service_role.
+create table if not exists public.academia_weekly_classes (
+ id uuid primary key default gen_random_uuid(),
+ organization_id uuid not null references public.organizations(id) on delete cascade,
+ modality_id uuid not null,
+ audience_id uuid not null,
+ teacher_id uuid not null,
+ space_id uuid not null,
+ weekday integer not null check(weekday between 1 and 7),
+ start_time time not null check(start_time < time '24:00' and extract(second from start_time)=0),
+ duration_minutes integer not null check(duration_minutes between 1 and 1440),
+ notes text not null default '' check(length(notes)<=2000),
+ active boolean not null default true,
+ revision integer not null default 1,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(),
+ foreign key(organization_id,modality_id) references public.academia_modalities(organization_id,id),
+ foreign key(organization_id,audience_id) references public.academia_audiences(organization_id,id),
+ foreign key(organization_id,teacher_id) references public.academia_teachers(organization_id,id),
+ foreign key(organization_id,space_id) references public.academia_spaces(organization_id,id)
+);
+-- Sem exclusão por horário: aulas simultâneas são permitidas no roadmap.
+create index if not exists academia_weekly_classes_org_day on public.academia_weekly_classes(organization_id,weekday,start_time);
+alter table public.academia_weekly_classes enable row level security;
+revoke all on public.academia_weekly_classes from public,anon,authenticated;
+grant select on public.academia_weekly_classes to authenticated;
+grant insert(id,organization_id,modality_id,audience_id,teacher_id,space_id,weekday,start_time,duration_minutes,notes,active) on public.academia_weekly_classes to authenticated;
+grant update(modality_id,audience_id,teacher_id,space_id,weekday,start_time,duration_minutes,notes,active) on public.academia_weekly_classes to authenticated;
+grant all on public.academia_weekly_classes to service_role;
+drop policy if exists tenant_isolation_academia_weekly_classes_all on public.academia_weekly_classes;
+create policy tenant_isolation_academia_weekly_classes_all on public.academia_weekly_classes for select to authenticated
+ using(organization_id in (select public.fn_user_org_ids()) and exists(
+ select 1 from public.organizations o where o.id=organization_id and o.settings->'modules'->'academia'='true'::jsonb));
+drop policy if exists academia_weekly_classes_insert on public.academia_weekly_classes;
+create policy academia_weekly_classes_insert on public.academia_weekly_classes for insert to authenticated
+ with check(organization_id in (select public.fn_user_org_ids()) and public.fn_academia_catalog_write_allowed(organization_id));
+drop policy if exists academia_weekly_classes_update on public.academia_weekly_classes;
+create policy academia_weekly_classes_update on public.academia_weekly_classes for update to authenticated
+ using(organization_id in (select public.fn_user_org_ids()) and public.fn_academia_catalog_write_allowed(organization_id))
+ with check(organization_id in (select public.fn_user_org_ids()) and public.fn_academia_catalog_write_allowed(organization_id));
+drop trigger if exists academia_revision on public.academia_weekly_classes;
+create trigger academia_revision before update on public.academia_weekly_classes for each row execute function public.fn_academia_catalog_revision();
+
+create or replace function public.fn_academia_schedule_links() returns trigger
+language plpgsql set search_path=public as $$
+declare
+ linked record;
+ previous_id uuid;
+ enabled boolean;
+begin
+ if auth.uid() is not null and not public.fn_academia_catalog_write_allowed(new.organization_id) then
+   raise exception 'Sem permissão para editar a grade' using errcode='42501';
+ end if;
+ for linked in select * from (values
+   ('academia_modalities','modality_id',new.modality_id),
+   ('academia_audiences','audience_id',new.audience_id),
+   ('academia_teachers','teacher_id',new.teacher_id),
+   ('academia_spaces','space_id',new.space_id)
+ ) as links(table_name,column_name,record_id) loop
+   previous_id := null;
+   if tg_op='UPDATE' then previous_id := (to_jsonb(old)->>linked.column_name)::uuid; end if;
+   -- Preserva vínculos históricos; só vínculos novos e reativação exigem cadastros ativos.
+   if tg_op='INSERT' or previous_id is distinct from linked.record_id or (new.active and not old.active) then
+     execute format('select active from public.%I where organization_id=$1 and id=$2 for share',linked.table_name)
+       into enabled using new.organization_id,linked.record_id;
+     if enabled is distinct from true then
+       raise exception 'Selecione cadastros ativos desta empresa' using errcode='23514';
+     end if;
+   end if;
+ end loop;
+ return new;
+end; $$;
+revoke all on function public.fn_academia_schedule_links() from public,anon,authenticated;
+drop trigger if exists academia_schedule_links on public.academia_weekly_classes;
+create trigger academia_schedule_links before insert or update on public.academia_weekly_classes for each row execute function public.fn_academia_schedule_links();
 notify pgrst,'reload schema';
 
 -- ---- chamada de voz WaCalls — voice_calls (migration 0233) ----

@@ -166,8 +166,28 @@ export async function processLgpdExport(event: EventRow): Promise<HandlerResult>
     });
 
     // 4. Render PDF (with warning banner when unsigned).
-    const padesConfigured = isPadesConfigured();
+    //
+    // ═══ IMPORT SOB DEMANDA, E NÃO NO TOPO ═══
+    //
+    // `@react-pdf/renderer` puxa `@react-pdf/textkit`, que faz
+    // `require('@react-pdf/hyphenate/en-us')`. O `exports` daquele pacote
+    // declara só `import`, sem `require` — então no worker, que roda por `tsx`
+    // e resolve em CJS, o módulo NÃO CARREGA.
+    //
+    // Enquanto o import era estático, essa falha subia por
+    // `register-handlers.ts` (que importa todos os handlers de uma vez) e o
+    // `carregarDeps` do drain a engolia inteira: um `try/catch` desenhado para
+    // não derrubar o worker acabava desligando os QUATORZE handlers do
+    // event_log — mídia, follow-up, automações, notificações — por causa de um
+    // PDF que a maioria das instalações nunca gera. Medido na instalação do
+    // piloto: "event-log drain OFF" em 7 de 7 inicializações, com os handlers
+    // sobrevivendo apenas pelo cron de 1×/min.
+    //
+    // Sob demanda, a cadeia do PDF só é resolvida quando um export de LGPD
+    // realmente roda. Se ela falhar, falha ESTE job — que é quem pediu o PDF —
+    // e não o registro de todo mundo.
     const { renderLgpdPdf } = await import("@/lib/lgpd/pdf-renderer");
+    const padesConfigured = isPadesConfigured();
     const pdfBuffer = await renderLgpdPdf(data, { unsignedWarning: !padesConfigured });
 
     // 5. Sign (stubbed when key missing).

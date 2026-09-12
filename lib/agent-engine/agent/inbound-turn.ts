@@ -1,5 +1,9 @@
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
+import {
+  sinalDeConversaSobreGrade,
+  sinalDePedidoComercialDaAcademia,
+} from '@/lib/academia/consulta-grade';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
@@ -85,6 +89,7 @@ import {
   applyRequestHumanHandoff,
   buildHandoffSummary,
   detectAmbiguousOptOut,
+  detectHandoffConfirmation,
   detectHumanHandoffRequest,
   isLeadInHandoff,
   performHumanHandoff,
@@ -109,6 +114,7 @@ import {
   promessasEmAberto,
   type DeclaracaoDoTurno,
 } from './declaracao';
+import { ACADEMIA_GRADE_SYSTEM_BLOCK } from './academia-grade-prompt';
 import {
   projetarContexto,
   projetarRetornoDeTool,
@@ -774,6 +780,47 @@ const TRANSPARENCIA_SYSTEM_BLOCK =
  * pra essas outras decisões (aprovar desconto, exceção de política etc.),
  * porque este parágrafo só fala de checar/marcar horário.
  */
+/**
+ * Carrega o vocabulary do pipeline padrão da organização e renderiza como bloco
+ * de system prompt. Retorna null quando não há vocabulary configurado — zero
+ * custo para orgs que usam os termos padrão.
+ *
+ * ⚠️ ORG-LEVEL, não por lead: pipeline_id do lead só é resolvido DEPOIS da
+ * montagem do prompt (query de crm_leads na linha ~3879). O vocabulary aqui é
+ * o do pipeline PADRÃO da org, que cobre o caso mais comum (um funil só) e
+ * não exige reestruturação do fluxo de montagem. Orgs com múltiplos funis
+ * podem usar o system_prompt do agente para sobrescrever termos específicos.
+ */
+async function loadPipelineVocabularyBlock(
+  db: pg.Pool,
+  tenantId: string,
+): Promise<string | null> {
+  try {
+    const { rows } = await db.query<{ vocabulary: Record<string, string> | null }>(
+      `select vocabulary from crm_pipelines
+       where organization_id = $1 and is_default = true and is_archived = false
+       limit 1`,
+      [tenantId],
+    );
+    const vocab = rows[0]?.vocabulary;
+    if (!vocab || typeof vocab !== 'object') return null;
+    const entries = Object.entries(vocab).filter(
+      ([k, v]) => typeof v === 'string' && v.trim().length > 0,
+    );
+    if (entries.length === 0) return null;
+    const linhas = entries.map(([k, v]) => `- ${k}: ${v}`);
+    return (
+      '## Vocabulário do funil\n' +
+      'Use ESTES termos ao falar sobre o funil com o lead — nunca use os nomes internos:\n' +
+      linhas.join('\n')
+    );
+  } catch {
+    // Falha silenciosa: vocabulary é enriquecimento, não bloqueio. Sem ele o
+    // agente usa os termos do playbook, que é o comportamento anterior.
+    return null;
+  }
+}
+
 const AGENDA_SYSTEM_BLOCK =
   '## Agenda — nunca confirme sem checar\n' +
   'Você só pode dizer a um lead que um horário/consulta/visita está confirmado DEPOIS de chamar ' +
@@ -807,6 +854,8 @@ const AGENDA_TOOL_NAMES = new Set([
   'crm_book_appointment',
   'crm_reschedule_appointment',
 ]);
+
+const ACADEMIA_GRADE_TOOL_NAMES = new Set(['crm_find_academia_classes']);
 
 export interface InboundTurnKnobs {
   /** últimas N mensagens no contexto de abertura (LEAD_CONTEXT_HISTORY_LIMIT) */
@@ -1873,6 +1922,17 @@ async function executarTurnoDoAgente(
   if (agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment')) {
     blocosResidentes.push(AGENDA_SYSTEM_BLOCK);
   }
+  if (agentConfig !== null && agentConfig.toolIds.includes('crm_find_academia_classes')) {
+    blocosResidentes.push(ACADEMIA_GRADE_SYSTEM_BLOCK);
+  }
+  // Vocabulary do pipeline padrão da org — injetado como bloco residente para que
+  // o agente use os termos que o admin configurou ("Aluno" em vez de "Lead",
+  // "Matriculado" em vez de "Won"). Carregado aqui porque pipeline_id do lead
+  // NÃO está disponível antes da montagem do prompt (a query de crm_leads é
+  // pós-turno, na linha ~3879). Fallback seguro: sem vocabulary configurado,
+  // nenhum bloco é adicionado e o agente usa os termos padrão do playbook.
+  const vocabularyBlock = await loadPipelineVocabularyBlock(pool, tenantId);
+  if (vocabularyBlock !== null) blocosResidentes.push(vocabularyBlock);
   if (preview)
     blocosResidentes.push(
       'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',
@@ -1983,6 +2043,7 @@ async function executarTurnoDoAgente(
     inboundsPendentes.some(
       (texto) =>
         detectHumanHandoffRequest(texto) ||
+        detectHandoffConfirmation({ message: texto, lastBotMessage: previous?.body ?? null }) ||
         (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
     )
   ) {
@@ -2234,6 +2295,7 @@ async function executarTurnoDoAgente(
   // as tools do modelo rodam em passos anteriores do mesmo loop, o valor já está certo
   // quando o modelo decide mandar a resposta.
   let agendaToolCalledThisTurn = false;
+  let academiaGradeToolCalledThisTurn = false;
   const outcomes: ChannelSendResult[] = [];
   // Citações acumuladas por buscas de conhecimento DESTE turno — anexadas à
   // próxima outbound enviada (shape de lib/ai/citations/types, que a UI já lê).
@@ -2252,6 +2314,13 @@ async function executarTurnoDoAgente(
   // para decidir se a tool entra no turno (mesmo padrão de gate de search_knowledge/
   // request_human_handoff, feito antes do wrapToolsWithBreaker).
   const skillSignal = latestInboundSignal(effectiveContext.messages);
+  const academiaGradeRequestActive =
+    agentConfig !== null &&
+    agentConfig.toolIds.includes('crm_find_academia_classes') &&
+    sinalDeConversaSobreGrade(effectiveContext.messages);
+  const academiaGradeCommercialFollowupAllowed = sinalDePedidoComercialDaAcademia(
+    currentInboundText ?? skillSignal,
+  );
   const skillMatch = matchSkills(skills, skillSignal);
   const matchedSkillsBlock = renderMatchedSkillBodies(skillMatch.matched);
   if (!preview && deps.knobs.goldenCandidatesDir !== undefined) {
@@ -2619,6 +2688,11 @@ async function executarTurnoDoAgente(
             agenda: {
               active: agentConfig !== null && agentConfig.toolIds.includes('crm_book_appointment'),
               toolCalledThisTurn: agendaToolCalledThisTurn,
+            },
+            academiaGrade: {
+              active: academiaGradeRequestActive,
+              toolCalledThisTurn: academiaGradeToolCalledThisTurn,
+              commercialFollowupAllowed: academiaGradeCommercialFollowupAllowed,
             },
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
@@ -3289,14 +3363,17 @@ async function executarTurnoDoAgente(
           mcpCleanup = mcp.cleanup;
           for (const [name, mcpTool] of Object.entries(mcp.tools)) {
             if (name in rawTools) continue;
-            // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
-            // precisa saber para não vetar um turno que já checou a agenda de verdade.
-            if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
+            // Marca a EXECUÇÃO (não só a decisão de chamar): os gates devem distinguir uma
+            // capacidade publicada de uma consulta que realmente ocorreu neste turno.
+            const marcaAgenda = AGENDA_TOOL_NAMES.has(name);
+            const marcaGradeAcademia = ACADEMIA_GRADE_TOOL_NAMES.has(name);
+            if ((marcaAgenda || marcaGradeAcademia) && typeof mcpTool.execute === 'function') {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
               rawTools[name] = {
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
-                  agendaToolCalledThisTurn = true;
+                  if (marcaAgenda) agendaToolCalledThisTurn = true;
+                  if (marcaGradeAcademia) academiaGradeToolCalledThisTurn = true;
                   return executeOriginal(...args);
                 }) as typeof mcpTool.execute,
               };
@@ -3373,7 +3450,18 @@ async function executarTurnoDoAgente(
             },
             () => pendingCitations,
             semanticClassifier,
-            () => ({ agenda: { active: previewContext.agenda?.active ?? false, toolCalledThisTurn: agendaToolCalledThisTurn } }),
+            () => ({
+              agenda: {
+                active: previewContext.agenda?.active ?? false,
+                toolCalledThisTurn: agendaToolCalledThisTurn,
+              },
+              academiaGrade: {
+                active: previewContext.academiaGrade?.active ?? false,
+                toolCalledThisTurn: academiaGradeToolCalledThisTurn,
+                commercialFollowupAllowed:
+                  previewContext.academiaGrade?.commercialFollowupAllowed ?? false,
+              },
+            }),
           )
         : rawTools;
     const tools = wrapToolsWithBreaker(previewTools, {
@@ -3389,41 +3477,70 @@ async function executarTurnoDoAgente(
     const currentStage: LeadStage = leadState?.stage ?? 'new';
     let stageSuggestion: LeadStage | null = null;
     let stageHintBlock = '';
-    if (deps.knobs.stageClassifier !== undefined) {
-      stageSuggestion = await classifyStage(
-        pool,
-        deps.llmCfg,
-        { tenantId, leadId: leadId || null, jobId: job?.id },
-        {
-          context: effectiveContext,
-          currentStage,
-          ...argsAux(deps.knobs.stageClassifier.model),
-        },
-        { registry: deps.registry, log: runLog },
-      );
-      if (stageSuggestion !== null) {
-        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
-      }
-    }
 
     // F4-04: classifier ADVISÓRIO anti-jailbreak sobre a mensagem INBOUND do lead (o
     // skillSignal já é a última inbound). Roda pelo seam agnóstico (modelo BARATO, budget
     // checado nele). NÃO veta o inbound — só FLAGRA o turno no trace; flag/level não são PII
     // (a mensagem/reason nunca vão a log). A correlação com promessa fora de tabela escala no fim.
     let jailbreakLevel: JailbreakLevel = 'none';
-    if (camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined)) {
-      const verdict = await classifyJailbreak(
-        pool,
-        deps.llmCfg,
-        { tenantId, leadId: leadId || null, jobId: job?.id },
-        {
-          message: skillSignal,
-          // Knob ausente + organização ligando = roda com o modelo padrão dela,
-          // que é a convenção já usada pelo stageClassifier.
-          ...argsAux(deps.knobs.jailbreak?.model),
-        },
-        { registry: deps.registry, log: runLog },
-      );
+
+    // ═══ OS DOIS AUXILIARES ROLAM JUNTOS ═══
+    //
+    // Eram sequenciais, e a espera somava no relógio do cliente: medido no
+    // piloto, 3,3s de `stage_classifier` MAIS 3,9s de `jailbreak_detect` antes
+    // de o turno começar a ser gerado — 7,2s em que ninguém do outro lado vê
+    // nada acontecer.
+    //
+    // Nada os obriga a essa ordem: cada um lê contexto JÁ pronto (o estágio
+    // atual e a última inbound), nenhum lê a saída do outro, e os dois só são
+    // consumidos depois — a sugestão de estágio vira hint no sufixo do prompt,
+    // e o nível de jailbreak só é correlacionado no fim do turno. Em paralelo,
+    // o custo passa a ser o do mais lento em vez da soma.
+    //
+    // `Promise.all` e não `allSettled` de propósito: a escolta que envolve o
+    // turno inteiro é quem trata erro de auxiliar (ver o bloco grande acima
+    // sobre teto de orçamento), e engolir aqui devolveria o silêncio que
+    // aquela escolta foi criada para acabar.
+    const rodaStage = deps.knobs.stageClassifier !== undefined;
+    const rodaJailbreak = camadaLigada(camadas.jailbreak, deps.knobs.jailbreak !== undefined);
+    const [sugestao, verdict] = await Promise.all([
+      rodaStage
+        ? classifyStage(
+            pool,
+            deps.llmCfg,
+            { tenantId, leadId: leadId || null, jobId: job?.id },
+            {
+              context: effectiveContext,
+              currentStage,
+              ...argsAux(deps.knobs.stageClassifier!.model),
+            },
+            { registry: deps.registry, log: runLog },
+          )
+        : Promise.resolve(null),
+      rodaJailbreak
+        ? classifyJailbreak(
+            pool,
+            deps.llmCfg,
+            { tenantId, leadId: leadId || null, jobId: job?.id },
+            {
+              message: skillSignal,
+              // Knob ausente + organização ligando = roda com o modelo padrão dela,
+              // que é a convenção já usada pelo stageClassifier.
+              ...argsAux(deps.knobs.jailbreak?.model),
+            },
+            { registry: deps.registry, log: runLog },
+          )
+        : Promise.resolve(null),
+    ]);
+
+    if (rodaStage) {
+      stageSuggestion = sugestao;
+      if (stageSuggestion !== null) {
+        stageHintBlock = renderStageHint(stageSuggestion, currentStage);
+      }
+    }
+
+    if (verdict !== null) {
       jailbreakLevel = verdict.level;
       if (verdict.flag) {
         // trace do turno: só flag/level (não PII) — a mensagem e o reason nunca são logados.
