@@ -62,22 +62,36 @@ Ordem definida pelo Rafael: **PRD → Regras de Negócio → Specs → Epics →
 
 ## Fase 4 — Epics
 
-- [ ] Epic E1: Plataforma Base
-- [ ] Epic E2: Conexão WhatsApp + Inbox Live
-- [ ] Epic E3: Customer 360° + Identity Resolution
-- [ ] Epic E4: Pipeline Kanban + Atendimento Humano
-- [ ] Epic E5: IA Conversacional + Handoff
-- [ ] Epic E6: Integração Nuvemshop + LGPD
-- [ ] Epic E7: Hardening + Observability + Deploy
+> **Status real (2026-09-12)**: a numeração E1–E7 abaixo é a original do brainstorming.
+> Os epics canônicos vivem em `docs/stories/epics/EPIC-*.md` e estão mais avançados
+> do que esta lista sugere. O mapeamento e o status verificado no código são:
+
+- [x] EPIC-00 Foundation & Tooling — **completo** (8 waves)
+- [x] EPIC-01 Auth & App Shell — **completo** (12 waves)
+- [x] EPIC-02 Tenant Onboarding — **completo** (8 waves; WhatsApp QR build-only, E2E precisa Docker)
+- [x] EPIC-03 Inbox + Messaging — **completo** (15 waves; E2E send/receive precisa WAHA ativo)
+- [x] EPIC-04 Pipeline Kanban — **completo** (10 waves)
+- [x] EPIC-05 Customer 360 + Contacts — **completo** (9 waves)
+- [x] EPIC-06 AI Agent + RAG + Sentiment + Handoff — **completo** (12/12 waves implementadas)
+- [x] EPIC-07 Nuvemshop Integration — **completo** (11 waves)
+- [x] EPIC-08 LGPD Compliance — **completo** (8/8 waves: receivers, workers, pages, SLA watcher)
+- [x] EPIC-09 Team & Permissions — **completo** (7 waves; Resend real + service-role listing pendem env)
+- [x] EPIC-10 Audit & Settings — **completo** (9 waves; notification_prefs stubbed; sessions/storage/email change deferred)
+- [x] EPIC-11 Super-Admin Platform — **quase completo** (13/14 waves; S-11.14 billing overview pendente, S-11.10 cross-tenant search parcial)
+- [x] EPIC-12 Hardening + E2E + Polish — **completo** (10 waves; Lighthouse CI + bundle-analyzer + /app/* E2E deferred)
+- [x] EPIC-13 AI Agents Module — **completo** (12/12 waves: MCP tools, dispatcher, credentials, agents UI)
+
+### Gap restante identificado
+
 
 ## Fase 5 — Stories
 
-- [ ] Detalhar stories de cada epic com ACs
-- [ ] Estimativas relativas (T-shirt sizing)
-- [ ] Priorizar por Now/Next/Later
+- [x] Stories detalhadas com ACs para EPIC-00 a EPIC-13 (`docs/stories/epics/`)
+- [ ] Estimativas relativas (T-shirt sizing) — parcialmente feito nos epics (points por wave)
+- [ ] Priorizar por Now/Next/Later — feito informalmente; falta documento consolidado
 
 ## Fase 6 — Plano de Tasks
 
-- [ ] Quebrar stories em tasks técnicas
-- [ ] Sequenciar com dependências explícitas
-- [ ] Cronograma e marcos
+- [x] Tasks técnicas quebradas dentro de cada story/wave dos epics
+- [ ] Sequenciar dependências entre epics em documento único (hoje só nos headers de cada epic)
+- [ ] Cronograma e marcos consolidados
