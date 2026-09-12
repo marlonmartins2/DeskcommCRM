@@ -1342,6 +1342,13 @@ gen_b64() { openssl rand -base64 32; }
 : "${WAHA_HMAC_SECRET:=$(gen_hex)}"
 : "${SRH_TOKEN:=$(gen_hex)}"
 : "${WAHA_API_KEY:=$(gen_hex)}"
+# Chamada de voz (spec 18). Gerados SEMPRE, mesmo com a feature desligada: o
+# serviço não sobe sem admin, e pedir ao dono que invente três segredos no dia
+# em que ele quiser ligar a voz é o "edite o .env à mão" que a doutrina de
+# packaging proíbe. Gerar não liga nada — quem liga é COMPOSE_PROFILES.
+: "${WACALLS_ADMIN_USER:=deskcomm}"
+: "${WACALLS_ADMIN_PASSWORD:=$(gen_hex)}"
+: "${WACALLS_API_TOKEN:=$(gen_hex)}"
 # O container WAHA espera o HASH SHA512 hex; o app envia o plaintext no X-Api-Key.
 WAHA_API_KEY_SHA512="$(printf '%s' "$WAHA_API_KEY" | openssl dgst -sha512 -hex | awk '{print $NF}')"
 UPSTASH_REDIS_REST_TOKEN="$SRH_TOKEN"
@@ -1661,6 +1668,16 @@ esac
   envq WAHA_API_KEY "$WAHA_API_KEY"
   envq WAHA_API_KEY_SHA512 "$WAHA_API_KEY_SHA512"
   envq WAHA_HMAC_SECRET "$WAHA_HMAC_SECRET"
+  printf '# Chamada de voz WhatsApp (spec 18) — DESLIGADA. Ligá-la vincula um SEGUNDO\n'
+  printf '# aparelho ao mesmo número que já atende, por um caminho que não é o oficial:\n'
+  printf '# o risco é a CONTA ser bloqueada. Para ligar: COMPOSE_PROFILES=voz e\n'
+  printf '# WACALLS_API_BASE_URL=http://wacalls:8080, depois ./update.sh e, na tela,\n'
+  printf '# Configurações › Segurança. Vazio = o serviço nem é criado.\n'
+  envq COMPOSE_PROFILES "${COMPOSE_PROFILES:-}"
+  envq WACALLS_API_BASE_URL "${WACALLS_API_BASE_URL:-}"
+  envq WACALLS_ADMIN_USER "$WACALLS_ADMIN_USER"
+  envq WACALLS_ADMIN_PASSWORD "$WACALLS_ADMIN_PASSWORD"
+  envq WACALLS_API_TOKEN "$WACALLS_API_TOKEN"
   printf '# "true" exige assinatura em todo webhook do WAHA. O WAHA Core NÃO assina,\n'
   printf '# então ligar isto sem um WAHA Plus (ou proxy que assine) para a ingestão\n'
   printf '# de mensagens. A rota global já não é publicada na internet (ver Caddyfile).\n'
@@ -2101,6 +2118,20 @@ INCOMPLETO
   exit 1
 fi
 
+# O banner dizia "por padrão os erros são enviados" para TODA instalação — e a
+# pergunta de consentimento acima tem padrão NÃO enviar (issue #668 mediu o
+# .env do exemplo saindo com a telemetria ligada sem ninguém escolher). O texto
+# passa a refletir a escolha feita, em vez de afirmar um padrão.
+telemetria_no_banner() {
+  if [ "${SENTRY_DSN:-}" = "off" ]; then
+    printf '%s\n' "  Telemetria: DESLIGADA — nenhum relatório de erro sai desta instalação."
+    printf '%s\n' "  Para ligar, apague a linha SENTRY_DSN do .env e rode: docker compose $(dc_files) up -d"
+  else
+    printf '%s\n' "  Telemetria: LIGADA — só relatórios de erro anonimizados vão ao Sentry do"
+    printf '%s\n' "  projeto. Para desligar, ponha SENTRY_DSN='off' no .env e rode: docker compose $(dc_files) up -d"
+  fi
+}
+
 cat <<DONE
 
 $(c_grn "═══════════════════════════════════════════════════════")
@@ -2120,9 +2151,9 @@ $(pendencia_dos_emails)
        antes de abrir a tela — o QR code vale só uns minutos. Se expirar,
        o próprio CRM tem o botão "Gerar novo QR Code".
 
-  4. Ao terminar o onboarding, o CRM pede a verificação em duas etapas:
-       tenha o Google Authenticator/Authy à mão e GUARDE os códigos de
-       recuperação que aparecem. Perdeu o celular? bash hostgator-setup-kit/reset-mfa.sh ${OWNER_EMAIL}
+  4. A verificação em duas etapas é OPCIONAL: quem quiser liga em
+       Configurações → Segurança (guarde os códigos de recuperação).
+       Perdeu o celular? bash hostgator-setup-kit/reset-mfa.sh ${OWNER_EMAIL}
 
 $(c_grn "  ─── A comunidade ──────────────────────────────────────")
 
@@ -2131,9 +2162,7 @@ $(c_grn "  ─── A comunidade ───────────────�
 
        ${COMUNIDADE_URL}
 
-  Telemetria: por padrão os erros desta instalação são enviados ao Sentry do
-  projeto, o que ajuda a corrigir falhas que afetam todo mundo. Para desligar,
-  ponha SENTRY_DSN='off' no .env e rode: docker compose $(dc_files) up -d
+$(telemetria_no_banner)
 
   Comandos úteis:
     ver logs:      docker compose $(dc_files) logs -f app

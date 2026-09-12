@@ -455,6 +455,16 @@ Processo padrão (siga sempre):
 
 ## Skills relevantes a usar (Claude Code)
 
+**Guias embutidos neste repositório** (`.claude/skills/`, espelho gerado de `.agents/skills/` — a
+mesma tabela vale para Codex, Cursor, OpenCode e Antigravity; ver `AGENTS.md`):
+
+- `deskcomm-instalar` — instalar, atualizar ou consertar a instalação numa VPS
+- `deskcomm-cliente-novo` — configurar o CRM para um cliente ou nicho (agentes, roteadores, follow-ups, conhecimento)
+- `deskcomm-metricas` — desempenho, conversão, custo de IA, funil, relatório
+- `deskcomm-prompt` — afinar o prompt de um agente que não performa
+- `deskcomm-contribuir` — o espelho da triagem, antes do PR; fica quieto para o mantenedor
+- `deskcomm-doutrina` — as três regras que mais custam, antes de escrever código
+
 - `superpowers:brainstorming` — antes de implementar feature não-trivial
 - `superpowers:writing-plans` — pra task com mais de 1 etapa de DB/API
 - `superpowers:test-driven-development` — feature crítica (LGPD, RLS, anti-banimento)
