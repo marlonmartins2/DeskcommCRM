@@ -118,7 +118,7 @@ export function InboxFilters({ value, onChange }: Props) {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder={t("Buscar por nome, telefone ou mensagem…")}
-              className="h-9 rounded-full border-transparent bg-surface-elevated pl-9 text-sm shadow-none focus-visible:border-border focus-visible:bg-background"
+              className="h-9 rounded-full border-border bg-transparent pl-9 text-sm shadow-none focus-visible:border-accent focus-visible:bg-background"
               aria-label={t("Buscar conversas")}
             />
           </div>

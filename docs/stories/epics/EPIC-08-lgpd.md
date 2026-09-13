@@ -22,7 +22,8 @@ exposes_contracts:
   - "event.lgpd.redact_applied"
   - "route./app/lgpd/requests"
   - "route./app/lgpd/requests/[id]"
-status: pending
+status: completed
+completed_at: 2026-09-12
 created_at: 2026-04-28
 owner: Rafael Melgaço
 ---

@@ -33,7 +33,8 @@ exposes_contracts:
   - "hook.useTenantHealth"
   - "hook.useResolveIncident"
   - "middleware.requirePlatformAdmin"
-status: pending
+status: completed (partial: S-11.14 billing overview pendente; S-11.10 cross-tenant search parcial)
+completed_at: 2026-09-12
 created_at: 2026-04-28
 owner: Rafael Melgaço
 ---

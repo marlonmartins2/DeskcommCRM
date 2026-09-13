@@ -32,7 +32,8 @@ exposes_contracts:
   - "event.ai_agent.handoff_triggered"
   - "event.ai_agent.published"
   - "realtime.ai_agent_runs-{org_id}"
-status: pending
+status: completed
+completed_at: 2026-09-12
 created_at: 2026-05-05
 owner: Rafael Melgaço
 research_dossier: ~/tino-ai/Tino/research/pre-development/ai-agent-framework-deskcomm-whatsapp/

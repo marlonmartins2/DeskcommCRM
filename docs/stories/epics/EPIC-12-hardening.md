@@ -1045,7 +1045,7 @@ exposes:
 1. Lighthouse CI integration with fail thresholds in GitHub Actions.
 2. `@next/bundle-analyzer` thresholds (initial bundle <250KB gzipped) enforced in CI.
 3. E2E specs covering `/app/*` (inbox/kanban/contacts) — requires MFA bypass via test-only env var or storageState fixture (out of scope for this session).
-4. The 5 E2E jornadas detalhadas (operador inbound, super-admin cross-tenant, AI handoff, onboarding, LGPD data_request) — current suite covers smoke + auth + error pages; full journeys depend on EPIC-06 (AI) and EPIC-08 (LGPD) which are still pending.
+4. The 5 E2E jornadas detalhadas (operador inbound, super-admin cross-tenant, AI handoff, onboarding, LGPD data_request) — current suite covers smoke + auth + error pages; full journeys depend on EPIC-06 (AI) and EPIC-08 (LGPD), both completed as of 2026-09-12.
 
 ### Side effects on adjacent code
 

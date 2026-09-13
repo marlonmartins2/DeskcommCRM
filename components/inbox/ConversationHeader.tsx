@@ -141,7 +141,7 @@ export function ConversationHeader({ conversation }: Props) {
     // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
     // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
+    <div className="grid grid-cols-[1fr_auto] items-start gap-x-4 gap-y-2 border-b border-border bg-background px-4 py-3 md:items-center">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <h2 className="truncate text-sm font-semibold">{displayName}</h2>

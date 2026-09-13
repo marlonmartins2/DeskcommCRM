@@ -20,7 +20,8 @@ exposes_contracts:
   - "event.ai.sentiment_alert"
   - "event.ai.budget_warning"
   - "event.ai.budget_throttled"
-status: pending
+status: completed
+completed_at: 2026-09-12
 created_at: 2026-04-28
 owner: Rafael Melgaço
 ---

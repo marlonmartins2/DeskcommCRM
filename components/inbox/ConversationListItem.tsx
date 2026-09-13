@@ -248,22 +248,24 @@ export function ConversationListItem({
             ) : null}
             {truncated}
           </p>
-          {unread > 0 && (
-            <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
-              {unread}
-            </span>
-          )}
+          <div className="flex shrink-0 items-center gap-1">
+            {unread > 0 && (
+              <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
+                {unread}
+              </span>
+            )}
+          </div>
         </div>
 
         {temSelos && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            {visibleTags.map((t) => (
-              <Badge key={t} variant="secondary" className="h-4 px-1.5 text-[10px]">
-                {t}
+          <div className="mt-1 flex flex-wrap items-center gap-1 leading-none">
+            {visibleTags.map((tag) => (
+              <Badge key={tag} variant="secondary" className="h-3.5 px-1 text-[9px]">
+                {tag}
               </Badge>
             ))}
             {overflow > 0 && (
-              <span className="text-[10px] text-text-muted">+{overflow}</span>
+              <span className="text-[9px] text-text-muted">+{overflow}</span>
             )}
             {mostrarAtendente && comando.quem === "humano" && (
               <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
@@ -271,20 +273,20 @@ export function ConversationListItem({
             {mostrarCanal && rotuloCanal && (
               <Badge
                 variant="outline"
-                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-text-muted"
+                className="h-3.5 gap-0.5 px-1 text-[9px] font-normal text-text-muted"
                 title={`${t("Entrou por")} ${rotuloCanal}`}
               >
-                <Phone size={9} weight="regular" aria-hidden />
+                <Phone size={8} weight="regular" aria-hidden />
                 {rotuloCanal}
               </Badge>
             )}
             {c?.is_blocked && (
-              <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
+              <Badge variant="destructive" className="h-3.5 px-1 text-[9px]">
                 {t("Bloqueado")}
               </Badge>
             )}
             {c?.is_anonymized && (
-              <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
+              <Badge variant="outline" className="h-3.5 px-1 text-[9px]">
                 {t("Anonimizado")}
               </Badge>
             )}
