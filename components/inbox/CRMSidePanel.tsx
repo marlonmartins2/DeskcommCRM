@@ -546,11 +546,12 @@ export function CRMSidePanel({ conversation }: Props) {
   }
 
   return (
-    <aside className="flex h-full flex-col gap-4 overflow-y-auto border-l border-border bg-background p-4">
-      <section>
-        <h3 className="text-xs font-semibold text-text">
+    <aside className="flex h-full flex-col gap-5 overflow-y-auto border-l border-border bg-background p-4">
+      <section className="space-y-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-text-muted">
           {t("Contato")}
         </h3>
+        <Separator />
         <Card className="mt-2 space-y-2 p-3 text-sm">
           <div className="font-medium">{displayName}</div>
           {contact?.phone_number && (
