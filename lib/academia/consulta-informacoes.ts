@@ -13,13 +13,14 @@ const TERMOS_POR_ASSUNTO: Readonly<Record<AssuntoInformacaoAcademia, RegExp>> = 
   address: /\b(endereco|localizacao|onde fica)\b/i,
   contact: /\b(telefone|whatsapp|e mail|email|contato)\b/i,
   opening_hours:
-    /\b(abre|abrem|abrir|abertura|fecha|fecham|fechar|fechamento|funcionamento|funciona)\b/i,
+    /\b(abre|abrem|abrir|abertura|abert[oa]s?|fecha|fecham|fechar|fechamento|fechad[oa]s?|funcionamento|funciona)\b/i,
   rules: /\b(regra|regras|norma|normas|orientacao|orientacoes)\b/i,
 };
 
 const TERMOS_DE_EXCECAO_OPERACIONAL =
   /\b(feriado|feriados|recesso|recessos|excecao|excecoes|data especifica|natal|ano novo|carnaval|pascoa)\b/i;
 const DATA_NUMERICA = /\b\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?\b/;
+const DATA_POR_EXTENSO = /\b\d{1,2}\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b/i;
 
 export type EstadoDaConsultaInformacoesAcademia = "succeeded" | "failed";
 export type StatusDaConsultaInformacoesAcademia =
@@ -136,5 +137,6 @@ export function sinalDeExcecaoNasInformacoesAcademia(
 ): boolean {
   const entrada = ultimaMensagemInbound(mensagens);
   return DATA_NUMERICA.test(entrada) ||
+    DATA_POR_EXTENSO.test(normalizarTermoAcademia(entrada)) ||
     TERMOS_DE_EXCECAO_OPERACIONAL.test(normalizarTermoAcademia(entrada));
 }

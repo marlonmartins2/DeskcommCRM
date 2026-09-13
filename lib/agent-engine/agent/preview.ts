@@ -77,6 +77,8 @@ export async function previewGateContext(
   const academiaInformationRequiredSubjects = p.agent.toolIds.includes('crm_get_academia_info')
     ? assuntosSolicitadosNasInformacoesAcademia(p.context.context.messages)
     : [];
+  const academiaInformationExceptionActive = p.agent.toolIds.includes('crm_get_academia_info') &&
+    sinalDeExcecaoNasInformacoesAcademia(p.context.context.messages);
   const cfg = channel
     ? await loadChannelKnobs(db, org, channel, log)
     : { knobs: PACING_DEFAULTS, numberActivatedAt: null };
@@ -139,12 +141,12 @@ export async function previewGateContext(
       ),
     },
     academiaInformation: {
-      active: academiaInformationRequiredSubjects.length > 0,
+      active: academiaInformationRequiredSubjects.length > 0 || academiaInformationExceptionActive,
       available: p.agent.toolIds.includes('crm_get_academia_info'),
       status: 'not_called',
       requiredSubjects: academiaInformationRequiredSubjects,
       succeededSubjects: [],
-      exceptionActive: sinalDeExcecaoNasInformacoesAcademia(p.context.context.messages),
+      exceptionActive: academiaInformationExceptionActive,
       handoffSucceededThisTurn: false,
     },
     internalVocabularyEnforced: true,

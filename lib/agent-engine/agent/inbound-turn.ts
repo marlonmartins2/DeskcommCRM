@@ -2051,12 +2051,22 @@ async function executarTurnoDoAgente(
   const mensagemDoJob =
     currentInboundText ?? latestInboundSignal(openingContext.context.messages);
   const inboundsPendentes = inboundsNaoRespondidos(openingContext.context.messages);
+  // Última mensagem outbound do bot no histórico — fonte correta para confirmar
+  // handoff (o checkpoint `previous` guarda estado do turno, não o texto enviado).
+  let ultimaOutboundDoBot: string | null = null;
+  for (let i = openingContext.context.messages.length - 1; i >= 0; i -= 1) {
+    const m = openingContext.context.messages[i]!;
+    if (m.direction === 'outbound') {
+      ultimaOutboundDoBot = m.body;
+      break;
+    }
+  }
   if (
     !preview &&
     inboundsPendentes.some(
       (texto) =>
         detectHumanHandoffRequest(texto) ||
-        detectHandoffConfirmation({ message: texto, lastBotMessage: previous?.body ?? null }) ||
+        detectHandoffConfirmation({ message: texto, lastBotMessage: ultimaOutboundDoBot }) ||
         (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
     )
   ) {
@@ -2337,10 +2347,11 @@ async function executarTurnoDoAgente(
     agentConfig !== null && agentConfig.toolIds.includes('crm_get_academia_info')
       ? assuntosSolicitadosNasInformacoesAcademia(effectiveContext.messages)
       : [];
-  const academiaInformationRequestActive = academiaInformationRequiredSubjects.length > 0;
   const academiaInformationExceptionActive =
-    academiaInformationRequestActive &&
+    agentConfig !== null && agentConfig.toolIds.includes('crm_get_academia_info') &&
     sinalDeExcecaoNasInformacoesAcademia(effectiveContext.messages);
+  const academiaInformationRequestActive =
+    academiaInformationRequiredSubjects.length > 0 || academiaInformationExceptionActive;
   const academiaInformationQueryState = criarEstadoConsultaInformacoesAcademia(
     academiaInformationRequiredSubjects,
   );
@@ -3425,7 +3436,9 @@ async function executarTurnoDoAgente(
             const marcaAgenda = AGENDA_TOOL_NAMES.has(name);
             const marcaGradeAcademia = ACADEMIA_GRADE_TOOL_NAMES.has(name);
             const marcaInformacaoAcademia = ACADEMIA_INFORMATION_TOOL_NAMES.has(name);
-            if (marcaInformacaoAcademia) academiaInformationToolAvailableThisTurn = true;
+            if (marcaInformacaoAcademia && typeof mcpTool.execute === 'function') {
+              academiaInformationToolAvailableThisTurn = true;
+            }
             if (
               (marcaAgenda || marcaGradeAcademia || marcaInformacaoAcademia) &&
               typeof mcpTool.execute === 'function'

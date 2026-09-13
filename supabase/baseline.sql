@@ -23388,8 +23388,8 @@ create trigger trg_team_invites_updated_at
 comment on table public.team_invites is
   'Convite de time PENDENTE e seu histórico. O id da linha = invite_id do token HMAC; o aceite casa os dois e recusa convite revogado. Status é derivado, não coluna.';
 
--- ---- Academia opcional por empresa (migration 0233) ----
--- 0233 — módulo Academia opt-in por organização; ausência equivale a desligado.
+-- ---- Academia opcional por empresa (migration 0240) ----
+-- 0240 — módulo Academia opt-in por organização; ausência equivale a desligado.
 create or replace function public.fn_definir_modulo_academia(p_org uuid, p_enabled boolean)
 returns boolean language plpgsql security definer set search_path=public as $$
 begin
@@ -23407,7 +23407,7 @@ revoke all on function public.fn_definir_modulo_academia(uuid,boolean) from publ
 grant execute on function public.fn_definir_modulo_academia(uuid,boolean) to authenticated;
 notify pgrst,'reload schema';
 
--- ---- Cadastros da academia (migration 0234) ----
+-- ---- Cadastros da academia (migration 0241) ----
 create or replace function public.fn_academia_catalog_write_allowed(p_org uuid) returns boolean
 language sql stable security definer set search_path=public as $$
  select auth.uid() is not null and public.fn_role_at_least(p_org,'manager')
@@ -23416,7 +23416,7 @@ language sql stable security definer set search_path=public as $$
 $$;
 revoke all on function public.fn_academia_catalog_write_allowed(uuid) from public,anon,authenticated;
 grant execute on function public.fn_academia_catalog_write_allowed(uuid) to authenticated;
--- 0234 — cadastros tenant-aware da academia, sem dados comerciais presumidos.
+-- 0241 — cadastros tenant-aware da academia, sem dados comerciais presumidos.
 create or replace function public.fn_academia_catalog_revision() returns trigger
 language plpgsql set search_path=public as $$
 begin
@@ -23586,8 +23586,8 @@ drop trigger if exists academia_revision on public.academia_spaces;
 create trigger academia_revision before update on public.academia_spaces for each row execute function public.fn_academia_catalog_revision();
 notify pgrst,'reload schema';
 
--- ---- Grade semanal da academia (migration 0235) ----
--- 0235 — grade semanal de referência; ocorrências e exceções ficam para a próxima etapa.
+-- ---- Grade semanal da academia (migration 0242) ----
+-- 0242 — grade semanal de referência; ocorrências e exceções ficam para a próxima etapa.
 -- FKs compostas impedem vínculos entre empresas, inclusive com service_role.
 create table if not exists public.academia_weekly_classes (
  id uuid primary key default gen_random_uuid(),
@@ -24451,6 +24451,46 @@ create trigger trg_org_voice_calls_set_updated_at
   for each row execute function public.fn_set_updated_at();
 
 notify pgrst, 'reload schema';
+
+
+-- ---- Vocabulário do onboarding no install/update (0239, corrigida por 0243) ----
+-- Forward-fix de 0239: mantém a assinatura antiga, elimina a ambiguidade do
+-- parâmetro default e fecha a nova SECURITY DEFINER ao browser.
+-- ⚠️ ENTRA ANTES DO BLOCO DA VARREDURA anon, que é de propósito o último do arquivo.
+begin;
+
+CREATE OR REPLACE FUNCTION public.fn_aplicar_quadro_do_onboarding(
+  p_organization_id uuid,
+  p_pipeline_id uuid,
+  p_nome text,
+  p_slug text,
+  p_etapas jsonb,
+  p_vocabulary jsonb
+) returns jsonb
+language plpgsql security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_resultado jsonb;
+begin
+  -- Reutiliza as recusas e a troca atômica da assinatura original (0156).
+  v_resultado := public.fn_aplicar_quadro_do_onboarding(
+    p_organization_id, p_pipeline_id, p_nome, p_slug, p_etapas
+  );
+  if v_resultado->>'ok' = 'true' and p_vocabulary is not null then
+    update public.crm_pipelines set vocabulary = p_vocabulary, updated_at = now()
+      where id = p_pipeline_id and organization_id = p_organization_id;
+  end if;
+  return v_resultado;
+end;
+$$;
+
+revoke execute on function public.fn_aplicar_quadro_do_onboarding(uuid, uuid, text, text, jsonb, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.fn_aplicar_quadro_do_onboarding(uuid, uuid, text, text, jsonb, jsonb)
+  to service_role;
+
+commit;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

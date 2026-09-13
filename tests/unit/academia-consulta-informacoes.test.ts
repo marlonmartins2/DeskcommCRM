@@ -22,6 +22,8 @@ describe("sinal de informações operacionais da academia", () => {
     "Onde fica a academia?",
     "Vocês abrem aos sábados?",
     "Que horas vocês fecham?",
+    "Está aberto agora?",
+    "A academia está fechada hoje?",
   ])("reconhece pedido inequívoco: %s", (body) => {
     expect(sinalDeConversaSobreInformacoesAcademia([{ direction: "inbound", body }])).toBe(true);
   });
@@ -65,6 +67,9 @@ describe("sinal de informações operacionais da academia", () => {
     "A academia abre no feriado?",
     "Qual o funcionamento no Natal?",
     "Vocês abrem em 12/10?",
+    "E no feriado?",
+    "A academia abre em 7 de setembro?",
+    "Qual o funcionamento em 2026-09-07?",
   ])("identifica data que exige confirmação humana: %s", (body) => {
     expect(sinalDeExcecaoNasInformacoesAcademia([{ direction: "inbound", body }])).toBe(true);
   });

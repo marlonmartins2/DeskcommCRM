@@ -29,7 +29,7 @@ O módulo também controla a primeira ferramenta de Academia da IA: desligado, o
 `crm_find_academia_classes` falha fechado antes de ler ou devolver qualquer catálogo.
 
 
-## Cadastros básicos (0234)
+## Cadastros básicos (0241)
 
 ```mermaid
 flowchart LR
@@ -60,10 +60,10 @@ falha na lista é mostrada explicitamente. Nenhum envio WhatsApp ou ferramenta d
 
 Tipos de `lib/database.types.ts` para os novos objetos gerados pelo Supabase CLI 2.117.0 a partir da migration aplicada; demais declarações preservadas.
 
-## Grade semanal (0235)
+## Grade semanal (0242)
 
 CONFIRMADO pelo contrato `lib/academia/schedule.ts`, API `/api/v1/academia/schedule`
-e migration 0235: uma aula vincula modalidade, público, professor e ambiente da mesma
+e migration 0242: uma aula vincula modalidade, público, professor e ambiente da mesma
 organização, com dia ISO (1=segunda, 7=domingo), início local HH:mm e duração em minutos.
 O término é calculado e indica virada de dia. Não representa instante UTC nem ocorrência
 datada. Nenhuma faixa etária, equivalência, duração ou aula real é presumida.
