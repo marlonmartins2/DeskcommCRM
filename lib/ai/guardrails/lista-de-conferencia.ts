@@ -177,6 +177,16 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     camada: null,
   },
   {
+    nome: "academia_information_stall",
+    rotulo: "Não informar dados da academia sem consultar",
+    oQueProtege:
+      "Barra endereço, contato, funcionamento ou regra quando o assistente ainda não consultou as informações oficiais nesta resposta.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Evita deixar o cliente esperando ou responder com dados antigos quando a informação oficial já pode ser consultada. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
     nome: "disclosure",
     rotulo: "Dizer que é um assistente quando perguntam",
     oQueProtege: "Se o cliente pergunta se está falando com um robô, a resposta não pode enganar.",

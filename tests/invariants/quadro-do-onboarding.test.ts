@@ -46,6 +46,27 @@ function aplicar(org: string, pipeline: string, etapas = QUADRO): string {
 }
 
 describe("0156 · o quadro montado no onboarding", () => {
+  it("o clone fresco aplica vocabulary junto do quadro e mantém a chamada antiga", () => {
+    const { org, pipeline } = criarTenant("inv-0239-vocabulary");
+    expect(lastLine(sql(`select to_regprocedure('public.fn_aplicar_quadro_do_onboarding(uuid,uuid,text,text,jsonb,jsonb)') is not null;`))).toBe("t");
+    const resultado = lastLine(sql(`select public.fn_aplicar_quadro_do_onboarding(
+      '${org}'::uuid, '${pipeline}'::uuid, 'Matrículas', 'matriculas', ${QUADRO},
+      '{"lead":"Aluno","won":"Matriculado"}'::jsonb)::text;`));
+    expect(resultado).toContain('"ok": true');
+    expect(lastLine(sql(`select vocabulary->>'lead' from crm_pipelines where id='${pipeline}'::uuid;`))).toBe("Aluno");
+    expect(aplicar(org, pipeline)).toContain('"ok": true');
+    expect(lastLine(sql(`select vocabulary->>'lead' from crm_pipelines where id='${pipeline}'::uuid;`))).toBe("Aluno");
+  });
+
+  it("a variante vocabulary só é executável pelo serviço, nunca pelo browser", () => {
+    const assinatura = "public.fn_aplicar_quadro_do_onboarding(uuid,uuid,text,text,jsonb,jsonb)";
+    expect(lastLine(sql(`select to_regprocedure('${assinatura}') is not null;`))).toBe("t");
+    expect(lastLine(sql(`select has_function_privilege('anon','${assinatura}','EXECUTE')
+      or has_function_privilege('authenticated','${assinatura}','EXECUTE')
+      or has_function_privilege('public','${assinatura}','EXECUTE');`))).toBe("f");
+    expect(lastLine(sql(`select has_function_privilege('service_role','${assinatura}','EXECUTE');`))).toBe("t");
+  });
+
   it("o funil semeado nasce SEM ensinar o assistente a percorrê-lo", () => {
     // A precondição que o passo existe para corrigir. Medido no banco de
     // desenvolvimento em 2026-08-13: 312 etapas, 4 com destino — e as 4 de

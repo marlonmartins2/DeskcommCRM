@@ -113,15 +113,15 @@ async function main(): Promise<void> {
     "crm_get_lead",
     "crm_move_lead_stage",
     "crm_list_leads",
-    // ⚠️ AS CINCO ABAIXO ENTRARAM COM O TETO INDO DE 20 PARA 25, e não são enfeite.
+    // ⚠️ AS SEIS ABAIXO ACOMPANHAM OS BUMPS DO TETO e não são enfeite.
     //
     // A jornada do teto (issue #162) só existe se o cenário ESTOURAR: eram 3 do
     // seed + 18 de "Atender" = 21 contra teto 20, e a tela recusava dizendo
-    // "faltam 1 vaga". Com teto 25 essas mesmas 21 passam, a recusa nunca acontece
+    // "faltam 1 vaga". Com o aumento do teto essas mesmas 21 passam, a recusa nunca acontece
     // e o caso vira um clique que sempre dá certo — verde sem medir nada.
     //
-    // Oito reproduzem a MESMA aritmética no teto novo: 8 + 18 = 26 > 25, recusa
-    // por 1 vaga; desligar uma deixa 7 + 18 = 25, que é o teto exato e passa.
+    // Nove reproduzem a MESMA aritmética no teto atual: 9 + 18 = 27 > 26, recusa
+    // por 1 vaga; desligar uma deixa 8 + 18 = 26, que é o teto exato e passa.
     //
     // As escolhidas ficam FORA do pacote "Atender" de propósito — se alguma
     // estivesse dentro, a união seria menor que a soma e a conta acima não valeria.
@@ -131,6 +131,7 @@ async function main(): Promise<void> {
     "crm_book_appointment",
     "crm_reschedule_appointment",
     "crm_list_pipelines",
+    "crm_get_academia_info",
   ];
 
   // REPÕE TODAS AS VERSÕES DRAFT DESTE AGENTE, não só a de maior número.

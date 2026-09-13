@@ -186,6 +186,9 @@ describe("vetoReason", () => {
   it("traduz os gates conhecidos para linguagem de gente", () => {
     expect(vetoReason("stop", "opted_out")).toContain("pediu para parar");
     expect(vetoReason("budget", "exhausted")).toContain("orçamento");
+    expect(vetoReason("academia_information_stall", "sem_ferramenta")).toContain(
+      "informações cadastradas da academia",
+    );
   });
 
   it("gate desconhecido não vira linha vazia — mostra a regra e o código", () => {

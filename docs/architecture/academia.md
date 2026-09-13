@@ -1,8 +1,8 @@
 # Academia opcional por empresa
 
 Entregas atuais: ativação por administrador, navegação, fronteira de acesso, cadastros básicos,
-grade semanal de referência e consulta estruturada dessa grade pela IA. Exceções por data e
-preços entram nas próximas entregas.
+grade semanal de referência, informações operacionais e consultas estruturadas dessas duas
+fontes pela IA. Exceções por data e preços entram nas próximas entregas.
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,7 @@ O módulo também controla a primeira ferramenta de Academia da IA: desligado, o
 `crm_find_academia_classes` falha fechado antes de ler ou devolver qualquer catálogo.
 
 
-## Cadastros básicos (0234)
+## Cadastros básicos (0241)
 
 ```mermaid
 flowchart LR
@@ -60,10 +60,10 @@ falha na lista é mostrada explicitamente. Nenhum envio WhatsApp ou ferramenta d
 
 Tipos de `lib/database.types.ts` para os novos objetos gerados pelo Supabase CLI 2.117.0 a partir da migration aplicada; demais declarações preservadas.
 
-## Grade semanal (0235)
+## Grade semanal (0242)
 
 CONFIRMADO pelo contrato `lib/academia/schedule.ts`, API `/api/v1/academia/schedule`
-e migration 0235: uma aula vincula modalidade, público, professor e ambiente da mesma
+e migration 0242: uma aula vincula modalidade, público, professor e ambiente da mesma
 organização, com dia ISO (1=segunda, 7=domingo), início local HH:mm e duração em minutos.
 O término é calculado e indica virada de dia. Não representa instante UTC nem ocorrência
 datada. Nenhuma faixa etária, equivalência, duração ou aula real é presumida.
@@ -134,3 +134,61 @@ A grade é recorrente, não uma agenda de ocorrências. Pedido por data específ
 cancelamento ou substituição segue para atendimento humano. Uma futura cópia no RAG poderá
 ajudar descoberta narrativa, mas será uma derivação atualizada após mudanças e reconciliada
 periodicamente; horário, professor e ambiente continuam confirmados pela consulta direta.
+
+## Informações e funcionamento (0237)
+
+CONFIRMADO pelo contrato `lib/academia/information.ts`, pela API
+`/api/v1/academia/information` e pela migration 0237: cada organização possui no máximo um
+perfil com endereço, telefone, WhatsApp, e-mail e regras públicas. O fuso canônico permanece
+em `organizations.timezone`. Cada dia ISO possui zero ou um período contínuo; ausência
+significa fechado. Não há pausa de almoço, segundo período ou horário presumido.
+
+```mermaid
+flowchart LR
+  Tela[Minha Academia / Informações] --> API[GET e PUT /academia/information]
+  API --> RPC[fn_salvar_academia_info]
+  RPC --> Perfil[academia_profiles]
+  RPC --> Horarios[academia_opening_hours]
+  RPC --> Fuso[organizations.timezone]
+  Perfil --> Tool[crm_get_academia_info]
+  Horarios --> Tool
+  Fuso --> Tool
+  Tool --> Resposta[Resposta operacional com fonte e ausências]
+  Gate[academia_information_stall] --> Tool
+  Excecao[Feriado, recesso ou data específica] --> Handoff[Atendimento humano]
+```
+
+A tela envia o agregado completo com a revisão observada. A RPC usa lock da organização,
+controle de revisão e uma única transação para perfil, fuso e semana regular. Escrita exige
+manager, módulo ativo, suporte com escrita e MFA; leitura exige vínculo válido e módulo ativo.
+RLS isola as duas tabelas. O tenant vem da sessão na API e do contexto confiável na ferramenta,
+nunca do corpo ou dos argumentos do modelo. A auditoria registra os nomes dos campos alterados
+e a quantidade de períodos, sem copiar endereço, telefone, WhatsApp ou e-mail.
+
+`crm_get_academia_info` consulta diretamente a fonte relacional e devolve somente o assunto
+pedido: endereço, contatos separados, funcionamento ou regras. O retorno identifica a fonte
+como `cadastro_operacional`, marca `semanal_regular`, explicita campos ausentes, inclui fuso e
+data da última atualização e nunca expõe UUIDs. “Hoje” e “agora” são calculados no fuso da
+organização. Feriados, recessos e exceções não são confirmados; seguem para handoff.
+
+O runtime inclui a instrução residente apenas quando a capacidade está publicada, detecta o
+pedido somente na entrada atual do cliente e arma `academia_information_stall`. Cada assunto
+pedido — endereço, contato, funcionamento ou regras — precisa de uma consulta oficial concluída
+para aquele mesmo assunto; consultar endereço não libera uma resposta sobre funcionamento. O
+gate distingue ferramenta ausente, consulta falha, consulta parcial e todos os retornos oficiais
+necessários concluídos. Falha ou indisponibilidade exige handoff realmente concluído; mencionar
+“equipe” no texto não basta. Enquanto a consulta estiver disponível, o handoff também não serve
+como atalho e é barrado antes de produzir qualquer efeito. Datas específicas, feriados e recessos
+seguem a exigência de handoff, sem afirmar o horário. Termos de aula como “CrossFit segunda de
+manhã” continuam no fluxo independente da grade. Perfis sem permissão de edição veem as
+informações, mas não recebem ações de gravação.
+
+### Direção futura para RAG — não implementada nesta entrega
+
+O banco relacional continua sendo a fonte oficial. Uma futura projeção no RAG pode melhorar
+descoberta narrativa, desde que seja derivada por evento idempotente após cada alteração e
+acompanhada de reconciliação periódica. A projeção deverá carregar `revision` e hash do conteúdo,
+usar tombstone para remoções e detectar divergência entre banco e índice. Mesmo depois disso,
+respostas factuais sobre endereço, contato, funcionamento e regras continuam confirmadas pela
+consulta direta; em conflito, o banco prevalece. Nenhum evento, job de reconciliação, vetor ou
+tombstone dessa direção futura foi implementado agora.

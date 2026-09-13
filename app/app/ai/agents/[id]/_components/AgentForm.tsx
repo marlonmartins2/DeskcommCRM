@@ -917,11 +917,11 @@ export function AgentForm(props: Props) {
             {!disabled && form.system_prompt.trim().length < 200 && (
               <div className="flex flex-wrap gap-1">
                 {[
-                  { id: "clinica", label: "Clínica" },
-                  { id: "imobiliaria", label: "Imobiliária" },
-                  { id: "servicos", label: "Serviços" },
-                  { id: "curso", label: "Curso" },
-                  { id: "loja", label: "Loja" },
+                  { id: "clinica", label: t("Clínica") },
+                  { id: "imobiliaria", label: t("Imobiliária") },
+                  { id: "servicos", label: t("Serviços") },
+                  { id: "curso", label: t("Curso") },
+                  { id: "loja", label: t("Loja") },
                 ].map((tpl) => (
                   <button
                     key={tpl.id}

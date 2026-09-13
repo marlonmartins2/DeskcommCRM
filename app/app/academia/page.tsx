@@ -13,7 +13,7 @@ export default async function AcademiaPage() {
   return <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
     <header><h1 className="text-2xl font-semibold">{traduzir("Minha Academia", user.idioma)}</h1>
       <p className="mt-2 text-muted-foreground">{org.name}</p></header>
-    <p className="text-muted-foreground">{traduzir("Organize a grade de aulas e os cadastros da sua academia.", user.idioma)}</p>
+    <p className="text-muted-foreground">{traduzir("Organize a grade, os cadastros e as informações da sua academia.", user.idioma)}</p>
     {org.role === "admin" && <Link className="text-sm underline underline-offset-4" href="/app/settings/modules">{traduzir("Gerenciar módulos", user.idioma)}</Link>}
     <AcademiaWorkspace key={org.orgId} canEdit={org.role === "admin" || org.role === "manager"} />
   </div>;

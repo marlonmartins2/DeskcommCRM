@@ -25,6 +25,10 @@ import {
   sinalDeConversaSobreGrade,
   sinalDePedidoComercialDaAcademia,
 } from '@/lib/academia/consulta-grade';
+import {
+  assuntosSolicitadosNasInformacoesAcademia,
+  sinalDeExcecaoNasInformacoesAcademia,
+} from '@/lib/academia/consulta-informacoes';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -70,6 +74,11 @@ export async function previewGateContext(
   if (p.gateContext) return { ...p.gateContext, now };
   const org = p.organizationId,
     channel = p.channelId;
+  const academiaInformationRequiredSubjects = p.agent.toolIds.includes('crm_get_academia_info')
+    ? assuntosSolicitadosNasInformacoesAcademia(p.context.context.messages)
+    : [];
+  const academiaInformationExceptionActive = p.agent.toolIds.includes('crm_get_academia_info') &&
+    sinalDeExcecaoNasInformacoesAcademia(p.context.context.messages);
   const cfg = channel
     ? await loadChannelKnobs(db, org, channel, log)
     : { knobs: PACING_DEFAULTS, numberActivatedAt: null };
@@ -131,6 +140,15 @@ export async function previewGateContext(
         p.context.context.messages.filter((message) => message.direction === 'inbound').at(-1)?.body ?? '',
       ),
     },
+    academiaInformation: {
+      active: academiaInformationRequiredSubjects.length > 0 || academiaInformationExceptionActive,
+      available: p.agent.toolIds.includes('crm_get_academia_info'),
+      status: 'not_called',
+      requiredSubjects: academiaInformationRequiredSubjects,
+      succeededSubjects: [],
+      exceptionActive: academiaInformationExceptionActive,
+      handoffSucceededThisTurn: false,
+    },
     internalVocabularyEnforced: true,
   };
 }
@@ -140,6 +158,7 @@ const SCENARIO_READS = new Set([
   'crm_list_appointment_types',
   'crm_find_free_slots',
   'crm_find_academia_classes',
+  'crm_get_academia_info',
 ]);
 /** Unknown tools fail closed. A write proposal never calls its original execute. */
 export function applyPreviewPolicy(

@@ -33,6 +33,7 @@ export const AUDIT_ACTIONS = [
   "academia_catalog.updated",
   "academia_schedule.created",
   "academia_schedule.updated",
+  "academia_info.updated",
   "auth.login_success",
   "auth.login_failed",
   /** Teto de tentativas barrou antes de chegar ao provedor (issue #64). */

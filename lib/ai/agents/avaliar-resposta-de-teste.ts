@@ -76,6 +76,10 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
     gate: "academia_grade_stall",
     porque: "depende de a grade ter sido consultada nesta conversa — não há turno real no teste",
   },
+  {
+    gate: "academia_information_stall",
+    porque: "depende de as informações da academia terem sido consultadas nesta resposta — não há turno real no teste",
+  },
   { gate: "disclosure", porque: "depende de esta ser a primeira mensagem ao contato" },
 ];
 
